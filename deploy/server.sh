@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-if [ ! -f ./Gemfile.lock ]; then
+if [ ! -f ./Gemfile.lock ] || [ ! -f ./gemset.nix ]; then
 nix-shell -p bundler -p bundix --run '
   bundler update
 	bundler lock
