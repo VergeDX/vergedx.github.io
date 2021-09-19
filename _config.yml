@@ -84,4 +84,6 @@ RSS: false
 permalink: /:year/:month/:day/:title.html
 
 # Plugins
-plugins: [jekyll-paginate]
+# https://github.com/jekyll/jekyll/issues/4124#issuecomment-228194985
+gems: [jekyll-paginate]
+
