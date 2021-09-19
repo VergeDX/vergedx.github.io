@@ -1,0 +1,6 @@
+# These file generate by ./server.sh
+.bundle/config
+
+Gemfile.lock
+gemset.nix
+
