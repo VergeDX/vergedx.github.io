@@ -2,7 +2,7 @@
 layout: post
 title: 'Jekyll 博客搭建与 Nix 部署'
 date: 2021-09-19
-cover: ''
+cover: 'https://www.jekyll.com.cn/img/jekyll-og.png'
 ---
 
 > Nix is awesome.
