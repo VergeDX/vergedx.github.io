@@ -1,0 +1,36 @@
+name: jekyll deploy
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: jekyll deploy
+
+    steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v13
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Checkout the code
+      uses: actions/checkout@v2
+    - name: jekyll build
+      run: 'cd ./deploy/ && sed -i s/server/build/g default.nix && ./server.sh'
+
+    - name: Run git config --global
+      run: |
+        git config --global user.email "you@example.com"
+        git config --global user.name "Your Name"
+    - name: Run git commit -m deploy
+      run: 'cd ./deploy/_site/ && git init && git add . && git commit -m deploy'
+
+    - name: Force push the _site/
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: 'deploy'
+        force: true
+        directory: './deploy/_site/'
+
