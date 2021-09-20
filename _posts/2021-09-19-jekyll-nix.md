@@ -10,7 +10,8 @@ cover: 'https://www.jekyll.com.cn/img/jekyll-og.png'
 首篇博客自然是要讲述搭建的过程，对于这次开始写博客，我仍然选择使用 [kaeyleo/jekyll-theme-H2O](https://github.com/kaeyleo/jekyll-theme-H2O) 主题。
 不过这个项目已经有两年多时间没有更新了，可谓是年久失修。就连其使用的框架 [Jekyll](https://jekyllrb.com/) 也早已经历了一次大版本更新 (4.x)，无法使用这个主题。  
 
-再加上我使用的是较为特殊的 [NixOS](https://nixos.org/)，跑起这个项目就成为了第一个目标。  
+再加上我使用的是较为特殊的 [NixOS](https://nixos.org/)，跑起这个项目就成为了第一个目标。
+
 经过一番搜索，找到了一篇博客 ([Using Jekyll and Nix to blog](https://nathan.gs/2019/04/19/using-jekyll-and-nix-to-blog/))，使用 nix-shell (bundlerEnv) + 一个 script 解决了这个问题，最终提交见 [#bc6255e](https://github.com/VergeDX/vergedx.github.io/commit/bc6255e2b2b5022c9e18bd6ba69cf46494af7013)。
 
 GitHub pages 默认使用了较新版本的 Jekyll 帮我编译 blog，所以部署这件事情还得自己来。只需把 jekyll 命令换为 `jekyll build`，上传 `_site/*` 到另一个部署分支即可。一年前我在另一个 GitHub pages 这样做过，所以还记得。
