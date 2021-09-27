@@ -5,7 +5,7 @@ date: 2021-09-21
 cover: 'https://raw.githubusercontent.com/serokell/deploy-rs/master/docs/logo.svg'
 ---
 
-> Credit:
+> Credit: @Yuuta, @NickCao, 以及 NixOS 群群友。
 
 只是打算写一下最近都做了什么。
 
