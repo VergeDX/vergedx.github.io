@@ -1,0 +1,39 @@
+[
+  
+    {
+      "title"    : "关于两个 Nix 的 “bug” - Chromium &amp; Recursion",
+      "tags"     : "",
+      "url"      : "/2021/10/05/two-nix-bugs.html"
+    } ,
+  
+    {
+      "title"    : "集群监控，TICK 技术栈，以及 agenix",
+      "tags"     : "",
+      "url"      : "/2021/10/02/tick-stack.html"
+    } ,
+  
+    {
+      "title"    : "Rpi 4B，mDNS 与 deploy-rs",
+      "tags"     : "",
+      "url"      : "/2021/09/21/rpi-mdns-deploy-rs.html"
+    } ,
+  
+    {
+      "title"    : "rpi 4B + NixOS 踩坑小记 - WiFi",
+      "tags"     : "",
+      "url"      : "/2021/09/21/rpi-nixos-details.html"
+    } ,
+  
+    {
+      "title"    : "Raspberry Pi 4B 与 NixOS",
+      "tags"     : "",
+      "url"      : "/2021/09/20/rpi-nixos.html"
+    } ,
+  
+    {
+      "title"    : "Jekyll 博客搭建与 Nix 部署",
+      "tags"     : "",
+      "url"      : "/2021/09/19/jekyll-nix.html"
+    } 
+  
+]

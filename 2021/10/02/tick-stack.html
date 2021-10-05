@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>集群监控，TICK 技术栈，以及 agenix - Vanilla's blog</title>
+    <meta name="author"  content="Vanilla">
+    <meta name="description" content="集群监控，TICK 技术栈，以及 agenix">
+    <meta name="keywords"  content="">
+    <!-- Open Graph -->
+    <meta property="og:title" content="集群监控，TICK 技术栈，以及 agenix - Vanilla's blog">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/2021/10/02/tick-stack.html">
+    <meta property="og:description" content="">
+    <meta property="og:site_name" content="Vanilla's blog">
+    <link rel="stylesheet" href="//cdn.staticfile.org/normalize/6.0.0/normalize.min.css">
+    <link rel="stylesheet" href="//at.alicdn.com/t/font_roc50gemkxpw4s4i.css">
+    <link rel="stylesheet" href="/assets/css/github-markdown.css">
+    <link rel="stylesheet" href="/assets/css/prism.css">
+    <link rel="stylesheet" href="/assets/css/share.min.css">
+    <link rel="stylesheet" href="/assets/css/app.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+	
+	<!--
+Author: Ray-Eldath
+refer to:
+ - http://docs.mathjax.org/en/latest/options/index.html
+-->
+
+	<script type="text/javascript" async src="https://cdn.bootcss.com/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+	
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+		jax: ["input/TeX", "output/HTML-CSS"],
+		tex2jax: {
+			inlineMath: [ ["$", "$"] ],
+			displayMath: [ ["$$", "$$"] ],
+			skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+		},
+		"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] }
+      });
+    </script>
+
+	
+    <!--
+Author: Ray-Eldath
+-->
+<style>
+    .markdown-body .anchor{
+        float: left;
+        margin-top: -8px;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        opacity: 0;
+    }
+    
+    .markdown-body .anchor .anchor-icon{
+        font-size: 15px
+    }
+</style>
+<script>
+    $(document).ready(function() {
+        let nodes = document.querySelector(".markdown-body").querySelectorAll("h1,h2,h3")
+        for(let node of nodes) {
+            var anchor = document.createElement("a")
+            var anchorIcon = document.createElement("i")
+            anchorIcon.setAttribute("class", "fa fa-anchor fa-lg anchor-icon")
+            anchorIcon.setAttribute("aria-hidden", true)
+            anchor.setAttribute("class", "anchor")
+            anchor.setAttribute("href", "#" + node.getAttribute("id"))
+            
+            anchor.onmouseover = function() {
+                this.style.opacity = "0.4"
+            }
+            
+            anchor.onmouseout = function() {
+                this.style.opacity = "0"
+            }
+            
+            anchor.appendChild(anchorIcon)
+            node.appendChild(anchor)
+        }
+    })
+</script>
+</head>
+
+
+<body>
+  <!--[if lt IE 10]>
+<div class="alert-danger" role="alert">你的浏览器实在太太太旧了，放学别走，升级完浏览器再说！<a target="_blank" class="alert-link" href="http://browsehappy.com">立即升级</a></div>
+<![endif]-->
+  <input id="nm-switch" type="hidden" value="true"> <header class="g-header">
+    <div class="g-logo">
+      <a href="/"></a>
+    </div>
+    <i id="menu-toggle" class="iconfont icon-menu"></i>
+    <nav class="g-nav">
+        <ul>
+            
+            <li><a href="/">home</a></li>
+            
+            <li><a href="/tags.html">tags</a></li>
+            
+        </ul>
+    </nav>
+</header>
+
+
+  <header
+    class="g-banner post-header post-pattern-circuitBoard bgcolor-pink "
+    data-theme="pink"
+  >
+    <div class="post-wrapper">
+      <div class="post-tags">
+        
+      </div>
+      <h1>集群监控，TICK 技术栈，以及 agenix</h1>
+      <div class="post-meta">
+        <span class="post-meta-item"><i class="iconfont icon-author"></i>Vanilla</span>
+        <time class="post-meta-item" datetime="21-10-02"><i class="iconfont icon-date"></i>02 Oct 2021</time>
+      </div>
+    </div>
+    
+    <div class="filter"></div>
+      <div class="post-cover" style="background: url('https://www.influxdata.com/wp-content/uploads/influx-regular-black.jpg') center no-repeat; background-size: cover;"></div>
+    
+  </header>
+
+  <div class="post-content visible">
+    
+
+    <article class="markdown-body">
+      <blockquote>
+  <p>Telegraf | InfluxDB | Chronograf | Kapacitor.</p>
+</blockquote>
+
+<h3 id="tick-stack">TICK Stack</h3>
+
+<p>今天的主角是 <a href="https://wiki.archlinux.org/title/TICK_stack">TICK 技术栈</a> 。它是四个开源组件的集合，结合起来提供一个平台，用于存储、捕获、监控和可视化时间序列数据（Arch Wiki）。这四个开源组件分别是：</p>
+
+<ul>
+  <li><a href="https://www.influxdata.com/time-series-platform/telegraf/"><strong>T</strong>elegraf</a> - 用于从物联网设备等一系列来源中收集时序数据。</li>
+  <li><a href="https://www.influxdata.com/"><strong>I</strong>nfluxDB</a> - 用于处理大量时序数据的高性能数据库，由 <a href="https://golang.org/">Golang</a> 写成。</li>
+  <li><a href="https://www.influxdata.com/time-series-platform/chronograf/"><strong>C</strong>hronograf</a> - 对于 InfluxDB 1.x 数据的实时可视化。</li>
+  <li><a href="https://www.influxdata.com/time-series-platform/kapacitor/"><strong>K</strong>apacitor</a> - 基于 InfluxDB 数据视图的异常监控和警报。</li>
+</ul>
+
+<p>Arch Wiki 中的 Note 表示，不必全部使用这些组件。例如可以将 Chronograf 换为 <a href="https://grafana.com/">Grafana</a>，或不使用 Kapacitor 监控。</p>
+
+<p>事实上也的确是这样的，前不久 InfluxDB 推出了 2.x 版本，自身就已集成了数据可视化 + 监控 &amp; 预警。我也只配置了前两个，另外还有一个 Nginx。</p>
+
+<p>我们 NixOS 装这些东西可简单了，只需要 enable 一下就行。另外我的内网（校园网以及 WiFi）都不能算安全，我又生成了自签证书给 InfluxDB 用上。文档在这里：</p>
+
+<p><a href="https://docs.influxdata.com/influxdb/v2.0/security/enable-tls/">https://docs.influxdata.com/influxdb/v2.0/security/enable-tls/</a></p>
+
+<p>配置好 InfluxDB，你可以去 127.0.0.1:8086 进行一些初始设置，创建初始帐号、组织、buckets 等。接下来就要配 Telegraf 了。</p>
+
+<p>Telegraf 是数据采集服务，我们光有 InfluxDB 显然不行。在 InfluxDB 面板里，Load Data -&gt; Telegraf -&gt; Create a Configuration 里就可以创建配置了，我选了 System 和 Nginx。</p>
+
+<p>接下来它也有提示，我们需要 INFLUX_TOKEN 和配置文件的链接，想办法传进 systemd 里就行了。我的话还得把自签证书写里面，这里 @NickCao 老师建议我用 systemd 的 <a href="https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials">LoadCredential</a>。</p>
+
+<p>配置 Telegraf 的时候，InfluxDB 也会生成一个漂亮的 Dashboard。</p>
+
+<h3 id="flux">Flux</h3>
+
+<p>InfluxDB 的查询语言也挺好玩的。在 1.x 时代，只有 InfluxQL 语言可以用，它似乎是一个近似 SQL 的语言。2.x 起可以使用 Flux 语言进行查询，我放一个文档在这里：</p>
+
+<p><a href="https://docs.influxdata.com/flux/v0.x/">https://docs.influxdata.com/flux/v0.x/</a></p>
+
+<p>之前在群里看到 <a href="https://github.com/Harry-Chen">@Harry Chen</a> 写过 Flux，特殊的语法配上连字，一下子就引起了我的注意。</p>
+
+<h3 id="agenix">agenix</h3>
+
+<p><a href="https://github.com/FiloSottile/age">age</a> 是一个简单、现代又安全的加密工具、加密格式，agenix 自然是将其引入到 Nix 中，使得 Nix 用户更方便地管理 Token 等 secret。你可以将文件加密后，再放进配置中一起开源。</p>
+
+<p>它的文档说明十分详细，因此我也在这里放一个文档：</p>
+
+<p><a href="https://github.com/ryantm/agenix">https://github.com/ryantm/agenix</a></p>
+
+<p>基本上就是编辑一下 secrets.nix 和 configuration.nix，再用 <code class="highlighter-rouge">agenix -e 'file_name'</code> 命令来编辑私密文件。文件将会解密后放在 /run/secrets/ 下，你也可以在配置中调整它们的所有者。</p>
+
+    </article>
+
+    
+    <div class="social-share-wrapper">
+      <div class="social-share"></div>
+    </div>
+    
+  </div>
+
+  <section class="author-detail">
+    <section class="post-footer-item author-card">
+      <div class="avatar">
+        <img src="/assets/img/avatar.png" alt="">
+      </div>
+      <div class="author-name" rel="author">Vanilla</div>
+      <div class="bio">
+        <p></p>
+      </div>
+      
+      <ul class="sns-links">
+        
+        <li>
+          <a href="osu_Vanilla@126.com" target="_blank">
+                    <i class="iconfont icon-email"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://www.zhihu.com/people/xiang-zi-lan-xiao-ke-ai-w" target="_blank">
+                    <i class="iconfont icon-zhihu"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://twitter.com/osu_Vanilla" target="_blank">
+                    <i class="iconfont icon-twitter"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://github.com/VergeDX" target="_blank">
+                    <i class="iconfont icon-github"></i>
+                </a>
+        </li>
+        
+      </ul>
+      
+    </section>
+    <section class="post-footer-item read-next">
+      
+      <div class="read-next-item">
+        <a href="/2021/10/05/two-nix-bugs.html" class="read-next-link"></a>
+        <section>
+          <span>关于两个 Nix 的 “bug” - Chromium & Recursion</span>
+          <p>  The Nix expression language is a pure, lazy, functional...</p>
+        </section>
+        
+        <div class="filter"></div>
+        <img src="https://miro.medium.com/max/1400/1*ZUH2k05-kVg19QmzwvKdPw.png" alt="">
+        
+     </div>
+      
+
+      
+      <div class="read-next-item">
+        <a href="/2021/09/21/rpi-mdns-deploy-rs.html" class="read-next-link"></a>
+          <section>
+            <span>Rpi 4B，mDNS 与 deploy-rs</span>
+            <p>  Credit: @Yuuta, @NickCao, 以及 NixOS 群群友。</p>
+          </section>
+          
+          <div class="filter"></div>
+          <img src="https://raw.githubusercontent.com/serokell/deploy-rs/master/docs/logo.svg" alt="">
+          
+      </div>
+      
+    </section>
+    
+  </section>
+
+  <footer class="g-footer">
+  <section>Vanilla's blog ©
+  
+  
+  2021
+  </section>
+  <section>Powered by <a href="//jekyllrb.com">Jekyll</a> | <a href="https://github.com/kaeyleo/jekyll-theme-H2O">Theme H2O</a></section>
+</footer>
+
+
+  <script src="/assets/js/social-share.min.js"></script>
+  <script>
+    socialShare('.social-share', {
+      sites: [
+        
+          'wechat'
+          ,
+          
+        
+          'weibo'
+          ,
+          
+        
+          'douban'
+          ,
+          
+        
+          'twitter'
+          
+        
+      ],
+      wechatQrcodeTitle: "分享到微信朋友圈",
+      wechatQrcodeHelper: '<p>扫码后点击右上角</p><p>将本文分享至朋友圈</p>'
+    });
+  </script>
+
+  
+
+  <script src="/assets/js/prism.js"></script>
+  <script src="/assets/js/index.min.js"></script>
+</body>
+
+</html>

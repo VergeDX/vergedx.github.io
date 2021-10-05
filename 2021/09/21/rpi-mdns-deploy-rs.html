@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rpi 4B，mDNS 与 deploy-rs - Vanilla's blog</title>
+    <meta name="author"  content="Vanilla">
+    <meta name="description" content="Rpi 4B，mDNS 与 deploy-rs">
+    <meta name="keywords"  content="">
+    <!-- Open Graph -->
+    <meta property="og:title" content="Rpi 4B，mDNS 与 deploy-rs - Vanilla's blog">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/2021/09/21/rpi-mdns-deploy-rs.html">
+    <meta property="og:description" content="">
+    <meta property="og:site_name" content="Vanilla's blog">
+    <link rel="stylesheet" href="//cdn.staticfile.org/normalize/6.0.0/normalize.min.css">
+    <link rel="stylesheet" href="//at.alicdn.com/t/font_roc50gemkxpw4s4i.css">
+    <link rel="stylesheet" href="/assets/css/github-markdown.css">
+    <link rel="stylesheet" href="/assets/css/prism.css">
+    <link rel="stylesheet" href="/assets/css/share.min.css">
+    <link rel="stylesheet" href="/assets/css/app.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+	
+	<!--
+Author: Ray-Eldath
+refer to:
+ - http://docs.mathjax.org/en/latest/options/index.html
+-->
+
+	<script type="text/javascript" async src="https://cdn.bootcss.com/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+	
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+		jax: ["input/TeX", "output/HTML-CSS"],
+		tex2jax: {
+			inlineMath: [ ["$", "$"] ],
+			displayMath: [ ["$$", "$$"] ],
+			skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+		},
+		"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] }
+      });
+    </script>
+
+	
+    <!--
+Author: Ray-Eldath
+-->
+<style>
+    .markdown-body .anchor{
+        float: left;
+        margin-top: -8px;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        opacity: 0;
+    }
+    
+    .markdown-body .anchor .anchor-icon{
+        font-size: 15px
+    }
+</style>
+<script>
+    $(document).ready(function() {
+        let nodes = document.querySelector(".markdown-body").querySelectorAll("h1,h2,h3")
+        for(let node of nodes) {
+            var anchor = document.createElement("a")
+            var anchorIcon = document.createElement("i")
+            anchorIcon.setAttribute("class", "fa fa-anchor fa-lg anchor-icon")
+            anchorIcon.setAttribute("aria-hidden", true)
+            anchor.setAttribute("class", "anchor")
+            anchor.setAttribute("href", "#" + node.getAttribute("id"))
+            
+            anchor.onmouseover = function() {
+                this.style.opacity = "0.4"
+            }
+            
+            anchor.onmouseout = function() {
+                this.style.opacity = "0"
+            }
+            
+            anchor.appendChild(anchorIcon)
+            node.appendChild(anchor)
+        }
+    })
+</script>
+</head>
+
+
+<body>
+  <!--[if lt IE 10]>
+<div class="alert-danger" role="alert">你的浏览器实在太太太旧了，放学别走，升级完浏览器再说！<a target="_blank" class="alert-link" href="http://browsehappy.com">立即升级</a></div>
+<![endif]-->
+  <input id="nm-switch" type="hidden" value="true"> <header class="g-header">
+    <div class="g-logo">
+      <a href="/"></a>
+    </div>
+    <i id="menu-toggle" class="iconfont icon-menu"></i>
+    <nav class="g-nav">
+        <ul>
+            
+            <li><a href="/">home</a></li>
+            
+            <li><a href="/tags.html">tags</a></li>
+            
+        </ul>
+    </nav>
+</header>
+
+
+  <header
+    class="g-banner post-header post-pattern-circuitBoard bgcolor-pink "
+    data-theme="pink"
+  >
+    <div class="post-wrapper">
+      <div class="post-tags">
+        
+      </div>
+      <h1>Rpi 4B，mDNS 与 deploy-rs</h1>
+      <div class="post-meta">
+        <span class="post-meta-item"><i class="iconfont icon-author"></i>Vanilla</span>
+        <time class="post-meta-item" datetime="21-09-21"><i class="iconfont icon-date"></i>21 Sep 2021</time>
+      </div>
+    </div>
+    
+    <div class="filter"></div>
+      <div class="post-cover" style="background: url('https://raw.githubusercontent.com/serokell/deploy-rs/master/docs/logo.svg') center no-repeat; background-size: cover;"></div>
+    
+  </header>
+
+  <div class="post-content visible">
+    
+
+    <article class="markdown-body">
+      <blockquote>
+  <p>Credit: @Yuuta, @NickCao, 以及 NixOS 群群友。</p>
+</blockquote>
+
+<p>只是打算写一下最近都做了什么。</p>
+
+<h3 id="mdns">mDNS</h3>
+
+<p>拿到 Rpi 4B，早期部署 NixOS 的时候，经常会用到代理。只要打开笔记本上的防火墙端口，以及 CfW (<a href="https://github.com/Fndroid/clash_for_windows_pkg">Clash for Windows</a>) 中的 “Allow LAN” 选项，在 Rpi 上就可以使用主机的代理了。</p>
+
+<p>说到 CfW，它原来是 Windows only 的，现在三平台都可用，名字却没有改，它用的是电子 (<a href="https://www.electronjs.org/">Electron</a>)。顺便说一下，CfW 使用的是 clash 的未开源的高级版本，看起来不太清真。</p>
+
+<p>这是较为基础的操作，但我并不满足于此。虽说路由器分给我设备的 IP，大概率是不会变的，并且我也可以在路由器上进行 IP 与 MAC 绑定。但我却觉得使用 IP 进行通信较为麻烦且不够优雅，故打算使用 mDNS 进行局域网内的域名转换。</p>
+
+<p>mDNS 是 <a href="https://en.wikipedia.org/wiki/Multicast_DNS">Multicast DNS</a> 的缩写，就是用来做上面说的那些事情的。从名字也能听出来，它的实现方式是通过广播。下面是 <a href="https://github.com/Trumeet">@Yuuta</a> 的个人理解：</p>
+
+<blockquote>
+  <p>avahi 我个人理解本身就是个 mdns 实现？<br />
+我也不太懂，但就是一个整天给 5353 广播东西的玩意</p>
+</blockquote>
+
+<p>妮可草老师 (@NickCao) 则建议我使用 systemd 配置，因为可以少装 avahi 这个包。那么对应的 Arch Wiki 在这里：<a href="https://wiki.archlinux.org/title/Systemd-resolved#mDNS">systemd-resolved</a>。</p>
+
+<p>不过最后我还是用回了 avahi，这倒不是说 systemd 不好，而是 NixOS 模块的一个小问题。</p>
+
+<p>我的 NixOS 中，有着类似 <code class="highlighter-rouge">networking.interfaces.&lt;name&gt;.useDHCP = true;</code> 配置的存在，它会自动生成一个 <code class="highlighter-rouge">.network</code> 文件在 <code class="highlighter-rouge">/etc/systemd/network/</code> 下。由于 systemd 的服务排序规则，最好在其文件前加入优先级前缀，变为 <code class="highlighter-rouge">xx-name.network</code>。模块的作者都假定它们具有优先级 40，所以生成出的文件自然是 <code class="highlighter-rouge">40-name.network</code> 这样的形式。</p>
+
+<p>（此模块的具体实现代码：<a href="https://github.com/NixOS/nixpkgs/blob/8284fc30c84ea47e63209d1a892aca1dfcd6bdf3/nixos/modules/tasks/network-interfaces-scripted.nix#L58">nixos/modules/tasks/network-interfaces-scripted.nix#L58</a>）</p>
+
+<p>这就导致了一个什么问题呢？虽然 NixOS 模块可以帮我生成配置，我当然也可以在里面写一些额外的配置。比如上述 Arch Wiki 中的 <code class="highlighter-rouge">[Network]</code> - <code class="highlighter-rouge">MulticastDNS=yes</code>，在我这里需要写成 <code class="highlighter-rouge">systemd.network.networks.&lt;name&gt;.extraConfig = "MulticastDNS=yes";</code>。但这里的 name 指的不是接口的名称，而是 <code class="highlighter-rouge">.network</code> 文件的名称，这就需要我手动写上前缀 <code class="highlighter-rouge">40-</code>，对吧？</p>
+
+<p>这就导致了，这个前缀 <code class="highlighter-rouge">40-</code> 已经变成了 API 导出的一部分。如果后续模块的作者不打算用 40 优先级，我的配置就会莫名其妙坏掉。这使得我非常难以接受，所以干脆用 avahi 了，它的配置要简单得多：</p>
+
+<pre><code class="language-Nix"># https://github.com/NixOS/nixpkgs/issues/98050#issuecomment-860272122
+services.avahi = { enable = true; nssmdns = true; };
+services.avahi.publish = { enable = true; domain = true; addresses = true; };
+</code></pre>
+
+<p>启用 avahi，并让其发布主机的域名与地址，配置就算完成了。这就是 NixOS 的魅力所在。</p>
+
+<h3 id="deploy-rs">deploy-rs</h3>
+
+<p>接下来来说一个很好玩的东西，<a href="https://github.com/serokell/deploy-rs">deploy-rs</a>。一个使用了 Nix 的服务器集群部署工具，这些天我的体验非常不错。我用它直接部署树莓派的配置，它在笔记本上预编译好所有的东西，然后再发给树莓派用。就算树莓派没有网络也没有问题。</p>
+
+<p>由于我手里这一批次的设备较新，内核在读取 SD 卡时会遇到问题，需要多加一个设备树上去。（参见先前的博客：<a href="../20/rpi-nixos.html">Raspberry Pi 4B 与 NixOS</a>）。显然在树莓派上 build 是不太现实的。</p>
+
+<p>这个工具完美解决了我的需求，并且它是跨架构 + 自动的，这就已经很 crazy 了。</p>
+
+    </article>
+
+    
+    <div class="social-share-wrapper">
+      <div class="social-share"></div>
+    </div>
+    
+  </div>
+
+  <section class="author-detail">
+    <section class="post-footer-item author-card">
+      <div class="avatar">
+        <img src="/assets/img/avatar.png" alt="">
+      </div>
+      <div class="author-name" rel="author">Vanilla</div>
+      <div class="bio">
+        <p></p>
+      </div>
+      
+      <ul class="sns-links">
+        
+        <li>
+          <a href="osu_Vanilla@126.com" target="_blank">
+                    <i class="iconfont icon-email"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://www.zhihu.com/people/xiang-zi-lan-xiao-ke-ai-w" target="_blank">
+                    <i class="iconfont icon-zhihu"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://twitter.com/osu_Vanilla" target="_blank">
+                    <i class="iconfont icon-twitter"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://github.com/VergeDX" target="_blank">
+                    <i class="iconfont icon-github"></i>
+                </a>
+        </li>
+        
+      </ul>
+      
+    </section>
+    <section class="post-footer-item read-next">
+      
+      <div class="read-next-item">
+        <a href="/2021/10/02/tick-stack.html" class="read-next-link"></a>
+        <section>
+          <span>集群监控，TICK 技术栈，以及 agenix</span>
+          <p>  Telegraf | InfluxDB | Chronograf | Kapacitor.</p>
+        </section>
+        
+        <div class="filter"></div>
+        <img src="https://www.influxdata.com/wp-content/uploads/influx-regular-black.jpg" alt="">
+        
+     </div>
+      
+
+      
+      <div class="read-next-item">
+        <a href="/2021/09/21/rpi-nixos-details.html" class="read-next-link"></a>
+          <section>
+            <span>rpi 4B + NixOS 踩坑小记 - WiFi</span>
+            <p>  Thanks helping from @NickCao &amp; @nanoApe!</p>
+          </section>
+          
+          <div class="filter"></div>
+          <img src="https://www.thorntech.com/wp-content/uploads/2018/04/nixos-logo-800px.jpg" alt="">
+          
+      </div>
+      
+    </section>
+    
+  </section>
+
+  <footer class="g-footer">
+  <section>Vanilla's blog ©
+  
+  
+  2021
+  </section>
+  <section>Powered by <a href="//jekyllrb.com">Jekyll</a> | <a href="https://github.com/kaeyleo/jekyll-theme-H2O">Theme H2O</a></section>
+</footer>
+
+
+  <script src="/assets/js/social-share.min.js"></script>
+  <script>
+    socialShare('.social-share', {
+      sites: [
+        
+          'wechat'
+          ,
+          
+        
+          'weibo'
+          ,
+          
+        
+          'douban'
+          ,
+          
+        
+          'twitter'
+          
+        
+      ],
+      wechatQrcodeTitle: "分享到微信朋友圈",
+      wechatQrcodeHelper: '<p>扫码后点击右上角</p><p>将本文分享至朋友圈</p>'
+    });
+  </script>
+
+  
+
+  <script src="/assets/js/prism.js"></script>
+  <script src="/assets/js/index.min.js"></script>
+</body>
+
+</html>

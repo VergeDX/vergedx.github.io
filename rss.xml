@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Vanilla's blog</title>
+    <description></description>
+    <link>//</link>
+    <atom:link href="/feed.xml" rel="self" type="application/rss+xml" />
+    <pubDate>Tue, 05 Oct 2021 08:00:55 +0000</pubDate>
+    <lastBuildDate>Tue, 05 Oct 2021 08:00:55 +0000</lastBuildDate>
+    <generator>Jekyll v3.2.1</generator>
+    
+      <item>
+        <title>关于两个 Nix 的 “bug” - Chromium &amp; Recursion</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;The Nix expression language is a pure, lazy, functional language.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;最近日常使用 NixOS 的过程中，遇到了两个奇怪的问题。&lt;/p&gt;
+
+&lt;h3 id=&quot;1-nix-build-爆内存&quot;&gt;1. nix build 爆内存&lt;/h3&gt;
+
+&lt;p&gt;正如 Quote 所言，Nix 表达式语言是一种纯粹的、惰性的、函数式语言。这种特性造成了今天要讲的第一个问题 -- nix build 内存爆炸。&lt;/p&gt;
+
+&lt;p&gt;根据 GitHub issues &lt;a href=&quot;https://github.com/NixOS/nixpkgs/pull/139865&quot;&gt;NixOS/nixpkgs #139865&lt;/a&gt; 中的描述，我先是写了一个 uboot.nix：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;{ pkgs ? import &amp;lt;nixpkgs&amp;gt; { } }:
+pkgs.pkgsCross.aarch64-multiplatform.ubootRaspberryPi4_64bit.overrideAttrs (old: {
+  patches = old.patches ++ [
+    (pkgs.fetchpatch {
+      url = &quot;https://patchwork.ozlabs.org/series/259129/mbox/&quot;;
+      sha256 = &quot;04x55a62a5p4mv0ddpx7dnsh5pnx46vibnq8cry7hgwf4krl64gl&quot;;
+    })
+  ];
+})
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然后执行 &lt;code class=&quot;highlighter-rouge&quot;&gt;nix-build uboot.nix&lt;/code&gt; 后，是正常 build 出了 &lt;code class=&quot;highlighter-rouge&quot;&gt;u-boot-rpi4.bin&lt;/code&gt;，这里没有什么问题。&lt;/p&gt;
+
+&lt;p&gt;这之后为了 build sdImage 方便，我将其写进 &lt;code class=&quot;highlighter-rouge&quot;&gt;flake.nix&lt;/code&gt; 中，做成 overlays：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;{
+  nixpkgs.overlays = [
+    (self: super: {
+      ubootRaspberryPi4_64bit = super.callPackage ./uboot.nix { };
+    })
+  ];
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;并加在 &lt;code class=&quot;highlighter-rouge&quot;&gt;flake.nix&lt;/code&gt; 中的 &lt;code class=&quot;highlighter-rouge&quot;&gt;modules&lt;/code&gt; 里，就像这样：&lt;a href=&quot;https://github.com/VergeDX/PoC/blob/master/flake.nix&quot;&gt;VergeDX/PoC - flake.nix&lt;/a&gt;。其中，&lt;code class=&quot;highlighter-rouge&quot;&gt;&quot;${nixpkgs}/nixos/modules/installer/sd-card/sd-image-aarch64.nix&quot;&lt;/code&gt; 是用于构建 sdImage 的。可以参考一下 &lt;a href=&quot;../../09/21/rpi-nixos-details.html&quot;&gt;之前的博客&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;这看起来并没有什么问题。当然如果要用 overlays 的话，也可以直接在 overlays 里 overrideAttrs，没必要 callPackage。但这确是出现问题的地方。&lt;/p&gt;
+
+&lt;p&gt;我将相关代码另外单独放了一处 repo，有兴趣的朋友可以自己尝试一下：&lt;a href=&quot;https://github.com/VergeDX/PoC&quot;&gt;VergeDX/PoC&lt;/a&gt;。使用命令 &lt;code class=&quot;highlighter-rouge&quot;&gt;nix build .#nixosConfigurations.&quot;recurrent&quot;.config.system.build.sdImage&lt;/code&gt; 即可构建。&lt;/p&gt;
+
+&lt;p&gt;在我发现问题前，我跑了 nix build 一段时间后，我发现我的系统整个卡住了。最后通过 &lt;a href=&quot;https://en.wikipedia.org/wiki/Magic_SysRq_key&quot;&gt;Magic SysRq 组合键&lt;/a&gt; 才捡回一条命。我的机器配备了 32G 的内存，不存在内存不足的情况。&lt;/p&gt;
+
+&lt;p&gt;这之后我进行了多次实验与观察，发现跑完 nix build 后，内存一直在增长。同时 nix 进程也不吃 signal，只能通过 kill -9 来杀死。并且似乎是卡在 eval 阶段，因为无论是 -vL 还是 –dry-run 都不输出任何内容。&lt;/p&gt;
+
+&lt;p&gt;与 @NickCao 老师以及 @yinfeng 讨论后，爆内存的原因终于被找到了。首先需要注意的是 &lt;code class=&quot;highlighter-rouge&quot;&gt;uboot.nix&lt;/code&gt; 的第一行，它引用 pkgs 或导入 nixpkgs。由于这是 flakes，而 &lt;code class=&quot;highlighter-rouge&quot;&gt;import &amp;lt;nixpkgs&amp;gt;&lt;/code&gt; 是 impure 的。但该命令并未报 impure 错误，以为此处的 pkgs 是 flakes 中 nixpkgs 的 pkgs 属性，也即 &lt;code class=&quot;highlighter-rouge&quot;&gt;nix repl&lt;/code&gt; 中的 pkgs.pkgs。&lt;/p&gt;
+
+&lt;p&gt;而 pkgs.pkgs 则是 pkgs 本身，这也意味着可以 pkgs.pkgs.pkgs… 一直写下去。这就导致了 patches 变量一直在被 ++，始终无法收敛，最后内存爆炸。这并不是 Nix 的 bug。&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;@NickCao 老师：不过 til (Today I Learned)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&quot;2-chromium-与-xdg-open-的问题&quot;&gt;2. Chromium 与 xdg-open 的问题&lt;/h3&gt;
+
+&lt;p&gt;下一个问题是关于 chromium 包的。问题是这样的，某天开始我发现，如果从别的 app 调用 Chromium 打开新标签页，Chromium 仅仅显示一个空白的 New Tab。比如在 &lt;a href=&quot;https://albertlauncher.github.io/&quot;&gt;Albert&lt;/a&gt; 中搜索东西时，或者 Telegram / [Alacritty / Kitty 终端] 中点击链接时，又或者在 VSCode 中进行三方登陆时。在这些场景下 Chromium 都只会弹一个新窗口出来，但却是空白页。&lt;/p&gt;
+
+&lt;p&gt;本来我以为这只是 Chromium 的 bug，因为 &lt;code class=&quot;highlighter-rouge&quot;&gt;google-chrome&lt;/code&gt; 包和 &lt;code class=&quot;highlighter-rouge&quot;&gt;firefox&lt;/code&gt; 包均无此问题，就没有放在心上。但它不能正常工作又有些讨厌，于是打算尝试修一修。找到了这一篇问答：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://askubuntu.com/questions/540939/xdg-open-only-opens-a-new-tab-in-a-new-chromium-window-despite-passing-it-a-url&quot;&gt;xdg-open only opens a new tab in a new Chromium window despite passing it a URL&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;这里说的是在 Desktop entity 里，chromium %U 中的 %U 在 xdg-open 时会被换成 url，从而打开新标签页。于是我检查了一下 chromium, google-chrome, firefox 包中的 .desktop 文件，没看出什么端倪。&lt;/p&gt;
+
+&lt;p&gt;然后我试了一下 &lt;code class=&quot;highlighter-rouge&quot;&gt;chromium https://baidu.com&lt;/code&gt;，发现症状得以复现，于是我看了一下 chromium 的启动脚本（仅贴出最后四行）：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;exec &quot;/nix/store/blqad79va9mw2mwimhi4mvya0jbrrrvs-chromium-unwrapped-94.0.4606.71/libexec/chromium/chromium&quot;  --enable-gpu-rasterization \
+--enable-zero-copy \
+--enable-features=VaapiVideoDecoder
+ &quot;$@&quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这里的三个 --enable-xxx flag 是我用 override 里的参数 &lt;code class=&quot;highlighter-rouge&quot;&gt;commandLineArgs&lt;/code&gt; 传进去的。它接收一个字符串，并写在 chromium 的启动脚本里。由于最后那个多出来的换行，导致 “$@” 被删去，而它本来应该是 url 的占位符。又由于是 exec chromium ，所以执行完也不会报错，url 就这样给忽略掉了。&lt;/p&gt;
+
+&lt;p&gt;解决的方法也非常简单，多加一个反斜杠就好了：&lt;a href=&quot;https://github.com/VergeDX/config-nixpkgs/commit/a7c6a126a507888b3467f53154a4b1c2fb4d0f30&quot;&gt;VergeDX/config-nixpkgs #a7c6a12&lt;/a&gt;。&lt;/p&gt;
+</description>
+        <pubDate>Tue, 05 Oct 2021 00:00:00 +0000</pubDate>
+        <link>/2021/10/05/two-nix-bugs.html</link>
+        <guid isPermaLink="true">/2021/10/05/two-nix-bugs.html</guid>
+        
+        
+      </item>
+    
+      <item>
+        <title>集群监控，TICK 技术栈，以及 agenix</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Telegraf | InfluxDB | Chronograf | Kapacitor.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&quot;tick-stack&quot;&gt;TICK Stack&lt;/h3&gt;
+
+&lt;p&gt;今天的主角是 &lt;a href=&quot;https://wiki.archlinux.org/title/TICK_stack&quot;&gt;TICK 技术栈&lt;/a&gt; 。它是四个开源组件的集合，结合起来提供一个平台，用于存储、捕获、监控和可视化时间序列数据（Arch Wiki）。这四个开源组件分别是：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.influxdata.com/time-series-platform/telegraf/&quot;&gt;&lt;strong&gt;T&lt;/strong&gt;elegraf&lt;/a&gt; - 用于从物联网设备等一系列来源中收集时序数据。&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.influxdata.com/&quot;&gt;&lt;strong&gt;I&lt;/strong&gt;nfluxDB&lt;/a&gt; - 用于处理大量时序数据的高性能数据库，由 &lt;a href=&quot;https://golang.org/&quot;&gt;Golang&lt;/a&gt; 写成。&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.influxdata.com/time-series-platform/chronograf/&quot;&gt;&lt;strong&gt;C&lt;/strong&gt;hronograf&lt;/a&gt; - 对于 InfluxDB 1.x 数据的实时可视化。&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.influxdata.com/time-series-platform/kapacitor/&quot;&gt;&lt;strong&gt;K&lt;/strong&gt;apacitor&lt;/a&gt; - 基于 InfluxDB 数据视图的异常监控和警报。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Arch Wiki 中的 Note 表示，不必全部使用这些组件。例如可以将 Chronograf 换为 &lt;a href=&quot;https://grafana.com/&quot;&gt;Grafana&lt;/a&gt;，或不使用 Kapacitor 监控。&lt;/p&gt;
+
+&lt;p&gt;事实上也的确是这样的，前不久 InfluxDB 推出了 2.x 版本，自身就已集成了数据可视化 + 监控 &amp;amp; 预警。我也只配置了前两个，另外还有一个 Nginx。&lt;/p&gt;
+
+&lt;p&gt;我们 NixOS 装这些东西可简单了，只需要 enable 一下就行。另外我的内网（校园网以及 WiFi）都不能算安全，我又生成了自签证书给 InfluxDB 用上。文档在这里：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://docs.influxdata.com/influxdb/v2.0/security/enable-tls/&quot;&gt;https://docs.influxdata.com/influxdb/v2.0/security/enable-tls/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;配置好 InfluxDB，你可以去 127.0.0.1:8086 进行一些初始设置，创建初始帐号、组织、buckets 等。接下来就要配 Telegraf 了。&lt;/p&gt;
+
+&lt;p&gt;Telegraf 是数据采集服务，我们光有 InfluxDB 显然不行。在 InfluxDB 面板里，Load Data -&amp;gt; Telegraf -&amp;gt; Create a Configuration 里就可以创建配置了，我选了 System 和 Nginx。&lt;/p&gt;
+
+&lt;p&gt;接下来它也有提示，我们需要 INFLUX_TOKEN 和配置文件的链接，想办法传进 systemd 里就行了。我的话还得把自签证书写里面，这里 @NickCao 老师建议我用 systemd 的 &lt;a href=&quot;https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials&quot;&gt;LoadCredential&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;配置 Telegraf 的时候，InfluxDB 也会生成一个漂亮的 Dashboard。&lt;/p&gt;
+
+&lt;h3 id=&quot;flux&quot;&gt;Flux&lt;/h3&gt;
+
+&lt;p&gt;InfluxDB 的查询语言也挺好玩的。在 1.x 时代，只有 InfluxQL 语言可以用，它似乎是一个近似 SQL 的语言。2.x 起可以使用 Flux 语言进行查询，我放一个文档在这里：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://docs.influxdata.com/flux/v0.x/&quot;&gt;https://docs.influxdata.com/flux/v0.x/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;之前在群里看到 &lt;a href=&quot;https://github.com/Harry-Chen&quot;&gt;@Harry Chen&lt;/a&gt; 写过 Flux，特殊的语法配上连字，一下子就引起了我的注意。&lt;/p&gt;
+
+&lt;h3 id=&quot;agenix&quot;&gt;agenix&lt;/h3&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://github.com/FiloSottile/age&quot;&gt;age&lt;/a&gt; 是一个简单、现代又安全的加密工具、加密格式，agenix 自然是将其引入到 Nix 中，使得 Nix 用户更方便地管理 Token 等 secret。你可以将文件加密后，再放进配置中一起开源。&lt;/p&gt;
+
+&lt;p&gt;它的文档说明十分详细，因此我也在这里放一个文档：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://github.com/ryantm/agenix&quot;&gt;https://github.com/ryantm/agenix&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;基本上就是编辑一下 secrets.nix 和 configuration.nix，再用 &lt;code class=&quot;highlighter-rouge&quot;&gt;agenix -e 'file_name'&lt;/code&gt; 命令来编辑私密文件。文件将会解密后放在 /run/secrets/ 下，你也可以在配置中调整它们的所有者。&lt;/p&gt;
+</description>
+        <pubDate>Sat, 02 Oct 2021 00:00:00 +0000</pubDate>
+        <link>/2021/10/02/tick-stack.html</link>
+        <guid isPermaLink="true">/2021/10/02/tick-stack.html</guid>
+        
+        
+      </item>
+    
+      <item>
+        <title>Rpi 4B，mDNS 与 deploy-rs</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Credit: @Yuuta, @NickCao, 以及 NixOS 群群友。&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;只是打算写一下最近都做了什么。&lt;/p&gt;
+
+&lt;h3 id=&quot;mdns&quot;&gt;mDNS&lt;/h3&gt;
+
+&lt;p&gt;拿到 Rpi 4B，早期部署 NixOS 的时候，经常会用到代理。只要打开笔记本上的防火墙端口，以及 CfW (&lt;a href=&quot;https://github.com/Fndroid/clash_for_windows_pkg&quot;&gt;Clash for Windows&lt;/a&gt;) 中的 “Allow LAN” 选项，在 Rpi 上就可以使用主机的代理了。&lt;/p&gt;
+
+&lt;p&gt;说到 CfW，它原来是 Windows only 的，现在三平台都可用，名字却没有改，它用的是电子 (&lt;a href=&quot;https://www.electronjs.org/&quot;&gt;Electron&lt;/a&gt;)。顺便说一下，CfW 使用的是 clash 的未开源的高级版本，看起来不太清真。&lt;/p&gt;
+
+&lt;p&gt;这是较为基础的操作，但我并不满足于此。虽说路由器分给我设备的 IP，大概率是不会变的，并且我也可以在路由器上进行 IP 与 MAC 绑定。但我却觉得使用 IP 进行通信较为麻烦且不够优雅，故打算使用 mDNS 进行局域网内的域名转换。&lt;/p&gt;
+
+&lt;p&gt;mDNS 是 &lt;a href=&quot;https://en.wikipedia.org/wiki/Multicast_DNS&quot;&gt;Multicast DNS&lt;/a&gt; 的缩写，就是用来做上面说的那些事情的。从名字也能听出来，它的实现方式是通过广播。下面是 &lt;a href=&quot;https://github.com/Trumeet&quot;&gt;@Yuuta&lt;/a&gt; 的个人理解：&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;avahi 我个人理解本身就是个 mdns 实现？&lt;br /&gt;
+我也不太懂，但就是一个整天给 5353 广播东西的玩意&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;妮可草老师 (@NickCao) 则建议我使用 systemd 配置，因为可以少装 avahi 这个包。那么对应的 Arch Wiki 在这里：&lt;a href=&quot;https://wiki.archlinux.org/title/Systemd-resolved#mDNS&quot;&gt;systemd-resolved&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;不过最后我还是用回了 avahi，这倒不是说 systemd 不好，而是 NixOS 模块的一个小问题。&lt;/p&gt;
+
+&lt;p&gt;我的 NixOS 中，有着类似 &lt;code class=&quot;highlighter-rouge&quot;&gt;networking.interfaces.&amp;lt;name&amp;gt;.useDHCP = true;&lt;/code&gt; 配置的存在，它会自动生成一个 &lt;code class=&quot;highlighter-rouge&quot;&gt;.network&lt;/code&gt; 文件在 &lt;code class=&quot;highlighter-rouge&quot;&gt;/etc/systemd/network/&lt;/code&gt; 下。由于 systemd 的服务排序规则，最好在其文件前加入优先级前缀，变为 &lt;code class=&quot;highlighter-rouge&quot;&gt;xx-name.network&lt;/code&gt;。模块的作者都假定它们具有优先级 40，所以生成出的文件自然是 &lt;code class=&quot;highlighter-rouge&quot;&gt;40-name.network&lt;/code&gt; 这样的形式。&lt;/p&gt;
+
+&lt;p&gt;（此模块的具体实现代码：&lt;a href=&quot;https://github.com/NixOS/nixpkgs/blob/8284fc30c84ea47e63209d1a892aca1dfcd6bdf3/nixos/modules/tasks/network-interfaces-scripted.nix#L58&quot;&gt;nixos/modules/tasks/network-interfaces-scripted.nix#L58&lt;/a&gt;）&lt;/p&gt;
+
+&lt;p&gt;这就导致了一个什么问题呢？虽然 NixOS 模块可以帮我生成配置，我当然也可以在里面写一些额外的配置。比如上述 Arch Wiki 中的 &lt;code class=&quot;highlighter-rouge&quot;&gt;[Network]&lt;/code&gt; - &lt;code class=&quot;highlighter-rouge&quot;&gt;MulticastDNS=yes&lt;/code&gt;，在我这里需要写成 &lt;code class=&quot;highlighter-rouge&quot;&gt;systemd.network.networks.&amp;lt;name&amp;gt;.extraConfig = &quot;MulticastDNS=yes&quot;;&lt;/code&gt;。但这里的 name 指的不是接口的名称，而是 &lt;code class=&quot;highlighter-rouge&quot;&gt;.network&lt;/code&gt; 文件的名称，这就需要我手动写上前缀 &lt;code class=&quot;highlighter-rouge&quot;&gt;40-&lt;/code&gt;，对吧？&lt;/p&gt;
+
+&lt;p&gt;这就导致了，这个前缀 &lt;code class=&quot;highlighter-rouge&quot;&gt;40-&lt;/code&gt; 已经变成了 API 导出的一部分。如果后续模块的作者不打算用 40 优先级，我的配置就会莫名其妙坏掉。这使得我非常难以接受，所以干脆用 avahi 了，它的配置要简单得多：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;# https://github.com/NixOS/nixpkgs/issues/98050#issuecomment-860272122
+services.avahi = { enable = true; nssmdns = true; };
+services.avahi.publish = { enable = true; domain = true; addresses = true; };
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;启用 avahi，并让其发布主机的域名与地址，配置就算完成了。这就是 NixOS 的魅力所在。&lt;/p&gt;
+
+&lt;h3 id=&quot;deploy-rs&quot;&gt;deploy-rs&lt;/h3&gt;
+
+&lt;p&gt;接下来来说一个很好玩的东西，&lt;a href=&quot;https://github.com/serokell/deploy-rs&quot;&gt;deploy-rs&lt;/a&gt;。一个使用了 Nix 的服务器集群部署工具，这些天我的体验非常不错。我用它直接部署树莓派的配置，它在笔记本上预编译好所有的东西，然后再发给树莓派用。就算树莓派没有网络也没有问题。&lt;/p&gt;
+
+&lt;p&gt;由于我手里这一批次的设备较新，内核在读取 SD 卡时会遇到问题，需要多加一个设备树上去。（参见先前的博客：&lt;a href=&quot;../20/rpi-nixos.html&quot;&gt;Raspberry Pi 4B 与 NixOS&lt;/a&gt;）。显然在树莓派上 build 是不太现实的。&lt;/p&gt;
+
+&lt;p&gt;这个工具完美解决了我的需求，并且它是跨架构 + 自动的，这就已经很 crazy 了。&lt;/p&gt;
+</description>
+        <pubDate>Tue, 21 Sep 2021 00:00:00 +0000</pubDate>
+        <link>/2021/09/21/rpi-mdns-deploy-rs.html</link>
+        <guid isPermaLink="true">/2021/09/21/rpi-mdns-deploy-rs.html</guid>
+        
+        
+      </item>
+    
+      <item>
+        <title>rpi 4B + NixOS 踩坑小记 - WiFi</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Thanks helping from @NickCao &amp;amp; @nanoApe!&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;这篇文章是昨天 blog &lt;a href=&quot;../20/rpi-nixos.html&quot;&gt;Raspberry Pi 4B 与 NixOS&lt;/a&gt; 的后续。&lt;/p&gt;
+
+&lt;p&gt;昨天解决完 rpi 4B 不读卡的问题，今天就要正式安装 NixOS 了，首先是 WiFi 问题。&lt;/p&gt;
+
+&lt;p&gt;在文章开始之前，我想说明一些 NixOS 的特性及特点。Nix 是一套 &lt;a href=&quot;https://zh.wikipedia.org/wiki/%E7%B5%84%E5%BB%BA%E8%87%AA%E5%8B%95%E5%8C%96&quot;&gt;构建系统&lt;/a&gt;，正如 &lt;a href=&quot;https://cmake.org/&quot;&gt;CMake&lt;/a&gt; 之于 C / C++，&lt;a href=&quot;https://gradle.org/&quot;&gt;Gradle&lt;/a&gt; 之于 Java / Kotlin。而 &lt;a href=&quot;https://zh.wikipedia.org/wiki/Nix_%E5%8C%85%E7%AE%A1%E7%90%86%E5%99%A8&quot;&gt;Nix&lt;/a&gt; 是一个包管理器，却不仅仅局限于构建软件包，它甚至可以用于构建 img 镜像。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://en.wikipedia.org/wiki/NixOS&quot;&gt;NixOS&lt;/a&gt; 则是一个 Linux 发行版，它采用 Nix 来管理操作系统中包括 Linux 内核的所有部分。辅以 &lt;a href=&quot;https://github.com/NixOS/nixpkgs&quot;&gt;nixpkgs&lt;/a&gt; 中的大量模块，为日常使用、服务器部署等场景提供了大量便利。&lt;/p&gt;
+
+&lt;h3 id=&quot;构建启动镜像&quot;&gt;构建启动镜像&lt;/h3&gt;
+
+&lt;p&gt;要构建出 rpi 的启动镜像，只靠 x86_64 的机器肯定是不行的。我们需要有 ARM 架构的服务器，或进行一些特殊的操作：&lt;a href=&quot;https://nixos.wiki/wiki/NixOS_on_ARM#Build_your_own_image&quot;&gt;NixOS on ARM&lt;/a&gt;。在上述的 NixOS wiki 中，我们需要启用 &lt;a href=&quot;https://zh.wikipedia.org/wiki/Binfmt_misc&quot;&gt;binfmt&lt;/a&gt;，NixOS 会帮我们启动一个 aarch64 的 QEMU 虚拟机，并在其中进行编译。&lt;/p&gt;
+
+&lt;p&gt;要针对 aarch64 启用 binfmt，只需将这一行加入 NixOS 主配置，重建切换即可：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;boot.binfmt.emulatedSystems = [ &quot;aarch64-linux&quot; ];
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;接下来需要准备要构建 img 文件的配方，这在 Nix 中被称为 dervation：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;{ ... }：{
+  imports = [
+    &amp;lt;nixpkgs/nixos/modules/installer/sd-card/sd-image-aarch64-installer.nix&amp;gt;  
+  ];
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;我们直接将 nixpkgs 中的 &lt;code class=&quot;highlighter-rouge&quot;&gt;sd-image-aarch64-installer.nix&lt;/code&gt; 文件引入进来即可，同时可以在 imports 块外面写自己的配置，比如为树莓派配置自动连接 WiFi。&lt;/p&gt;
+
+&lt;p&gt;根据 wiki - &lt;a href=&quot;https://nixos.wiki/wiki/Wpa_supplicant&quot;&gt;wpa_supplicant&lt;/a&gt;，我添加以下内容：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Nix&quot;&gt;networking.wireless.enable = true;
+networking.wireless.networks = { &quot;@Ruijie-s02C6&quot;.psk = &quot;Jxustnc001&quot;; };
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这之后就可以构建 img 了，命令如下。因为我们需要在 aarch64 QEMU 中进行构建，参数 &lt;code class=&quot;highlighter-rouge&quot;&gt;--argstr system aarch64-linux&lt;/code&gt; 是必不可少的。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Bash&quot;&gt;nix-build '&amp;lt;nixpkgs/nixos&amp;gt;' \ 
+  -A config.system.build.sdImage \ 
+  --argstr system aarch64-linux \ 
+  -I nixos-config=./sd-image.nix
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;写入镜像&quot;&gt;写入镜像&lt;/h3&gt;
+
+&lt;p&gt;根据树莓派官方文档 &lt;a href=&quot;https://www.raspberrypi.org/documentation/computers/getting-started.html#installing-images-on-linux&quot;&gt;Installing Images on Linux&lt;/a&gt;，我写入镜像的命令如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-Bash&quot;&gt;sudo dd \ 
+  if=nixos-sd-image-21.05.3248.6120ac5cd20-aarch64-linux.img of=/dev/sdb \ 
+  bs=4M conv=fsync status=progress
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&quot;wifi-踩坑开始&quot;&gt;WiFi 踩坑开始&lt;/h3&gt;
+
+&lt;p&gt;构建完成后踩坑正式开始，我的树莓派并没有连上 WiFi，systemctl 查看 wpa_supplicant 服务状态后得到错误码 &lt;code class=&quot;highlighter-rouge&quot;&gt;CTRL-EVENT-ASSOC-REJECT&lt;/code&gt;，以下是各种尝试：&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;禁用 wmm：&lt;a href=&quot;https://www.raspberrypi.org/forums/viewtopic.php?t=198104&quot;&gt;https://www.raspberrypi.org/forums/viewtopic.php?t=198104&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;HDMI 对 WiFi 造成干扰：&lt;a href=&quot;https://www.raspberrypi.org/forums/viewtopic.php?t=274715&quot;&gt;https://www.raspberrypi.org/forums/viewtopic.php?t=274715&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;关闭 &lt;a href=&quot;https://zh.wikipedia.org/wiki/IEEE_802.11r-2008&quot;&gt;快速 BSS 切换&lt;/a&gt;：&lt;a href=&quot;https://raspberrypi.stackexchange.com/questions/77144/rpi3-wireless-issue-ctrl-event-assoc-reject-status-code-16&quot;&gt;https://raspberrypi.stackexchange.com/questions/77144/rpi3-wireless-issue-ctrl-event-assoc-reject-status-code-16&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;…….（这并不是什么愉快的回忆）&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;转机&quot;&gt;转机&lt;/h3&gt;
+
+&lt;p&gt;由于先前的报错太过于模糊，反倒掩盖了真实的问题。在一天将要结束之时，我使用 Android 手机开了一个热点，发现树莓派可以进行连接。逐步尝试后，定位到问题在与 5GHz 上，手机 5GHz only 热点下也仍然是相同的状况。&lt;/p&gt;
+
+&lt;p&gt;最后的解决方案是由 &lt;a href=&quot;https://github.com/Konano&quot;&gt;@nanoApe&lt;/a&gt; 提供的。他之前也遇到过此问题，并为我找出了相关的 issues (&lt;a href=&quot;https://github.com/raspberrypi/firmware/issues/1359&quot;&gt;raspberrypi/firmware/#1359&lt;/a&gt;)。我们首先需要一点背景知识。&lt;/p&gt;
+
+&lt;p&gt;WiFi 的频率在各个国家都有规定，且各有不同。例如最大的发射功率和配制方式等技术细节。Linux 设备也必须支持这些规定，以便在全球范围内使用。自然而然的，内核中存在一个这样的数据库，以存放各个国家的详细通信规则。详细说明请参见 Wikipedia - &lt;a href=&quot;https://zh.wikipedia.org/wiki/WLAN%E4%BF%A1%E9%81%93%E5%88%97%E8%A1%A8&quot;&gt;WLAN 信道列表&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;根据上述 issues，这个数据库没有得到及时更新，所以导致某些 5GHz WiFi 的频道缺失。可以通过更新该 db 或切换路由器的发射频道来解决。于是我将路由器中的 “健康模式”（以 5GHz 最低功率的频道运行）关闭，问题便得以解决。&lt;/p&gt;
+</description>
+        <pubDate>Tue, 21 Sep 2021 00:00:00 +0000</pubDate>
+        <link>/2021/09/21/rpi-nixos-details.html</link>
+        <guid isPermaLink="true">/2021/09/21/rpi-nixos-details.html</guid>
+        
+        
+      </item>
+    
+      <item>
+        <title>Raspberry Pi 4B 与 NixOS</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Jesus fuck, Broadcom.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;树莓派 4B 自去年以来，确确实实是涨价了。&lt;a href=&quot;https://github.com/cyunrei&quot;&gt;@Cyunrei&lt;/a&gt; 早些时候买的 rpi 4b (4GB RAM)，大概还是 ￥500 不到，而现如今京东裸板的价格都要 ￥700 多。于是我选择了在淘宝购买，裸版价格 ￥500+，也没涨价太多。&lt;/p&gt;
+
+&lt;p&gt;买来之后，打算尝试一下学习 &lt;a href=&quot;https://xmonad.org/&quot;&gt;xmonad&lt;/a&gt;。这款 X11 窗口管理器之前被 &lt;a href=&quot;https://github.com/Icy-Thought&quot;&gt;@Icy-Thought&lt;/a&gt; 安利了多次，他最终调出来的桌面也很美观：&lt;a href=&quot;https://github.com/&quot;&gt;Icy-Thought/Snowflake&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;另外，我还需要一个设备作为 4K 电视的机顶盒。家里的那台酷开电视十分拉垮，即使是 adb debug 下也无法安装 &lt;a href=&quot;https://apkpure.com/vlc-for-android/org.videolan.vlc&quot;&gt;VLC for Android&lt;/a&gt;，自带的播放器又无法解码某些 mkv 视频的音轨，真是令人气愤。&lt;/p&gt;
+
+&lt;p&gt;一来二去，我便买入 rpi 4b 来玩。这期间也踩了不少坑，比如线材的选择和 NixOS 等方面。&lt;/p&gt;
+
+&lt;p&gt;首先是线材，rpi 4b 的显示输出接口为 MICRO HDMI (支持 2 x 4K 显示)。我的 &lt;a href=&quot;http://www.aocmonitor.com.cn/product/xianshiqi/1781&quot;&gt;AOC Q24N2&lt;/a&gt; 显示器上有 DP 和 HDMI 两个接口，其中 HDMI 接口已经被我的笔记本占用，故打算将树莓派接在 DP 上。&lt;/p&gt;
+
+&lt;p&gt;然而目前市面上的线材，似乎没有 MICRO HDMI -&amp;gt; DP 的，所以我先买了绿联 MICRO HDMI -&amp;gt; HDMI 的线，打算再购买 HDMI -&amp;gt; DP 的转接头，于是就踩到坑了。&lt;/p&gt;
+
+&lt;p&gt;市面上的 HDMI -&amp;gt; DP 转接头，竟然大多数都是 DP -&amp;gt; HDMI 的，这意味着无法反向使用。据 @Cyunrei 说此类转接头的原理类似漏斗，所以无法反向使用。这真是令人头痛，接下来的选择就只有 HDMI 切屏器了，然而我嫌弃它占用桌面空间，现在也不知道怎么办才好。&lt;/p&gt;
+
+&lt;p&gt;初步解决掉 rpi 显示输出的问题后，我自然是要装 NixOS 的。当然我也打算尝试其它发行版，比如 &lt;a href=&quot;https://plasma-bigscreen.org/&quot;&gt;Plasma Bigscreen&lt;/a&gt;。结果由于硬件太新，又遇到了另一个问题。&lt;/p&gt;
+
+&lt;p&gt;在遵循 &lt;a href=&quot;https://nixos.wiki/wiki/NixOS_on_ARM#Installation&quot;&gt;NixOS on ARM&lt;/a&gt; 时，使用通用的 images 系统无法启动（卡在 NixOS Stage 1，无法挂载根分区），具体表现可参考这个 issues：&lt;a href=&quot;https://github.com/NixOS/nixpkgs/issues/135828&quot;&gt;Raspberry Pi 4: Can’t mount SD card during boot&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;看到这个 issues 前，我曾多次怀疑是 SD 卡的问题。我使用 nix.dev 上的这篇博客 &lt;a href=&quot;https://nix.dev/tutorials/installing-nixos-on-a-raspberry-pi&quot;&gt;Installing NixOS on a Raspberry Pi&lt;/a&gt; 中的 images 尝试启动，仍然得到了相同的错误结果。而我与该博客的硬件设备相同，甚至 firmware 也有更新过。&lt;/p&gt;
+
+&lt;p&gt;这之后我为了调试，甚至换了一张实验室监控中使用的 SD 卡，问题仍然依旧，但树莓派自己的 rpi OS 倒是可以正常启动。当时我为了控制变量，直接购入了 &lt;a href=&quot;https://github.com/NickCao&quot;&gt;@NickCao&lt;/a&gt; 的同款 SD 卡 (&lt;a href=&quot;https://www.kingston.com/en/memory-cards/canvas-go-plus-microsd-card&quot;&gt;Canvas Go! Plus&lt;/a&gt;)，结果当天晚上就看到了上述 issues，快速尝试了一下发现问题解决。&lt;/p&gt;
+
+&lt;p&gt;根据上述 issues 的描述，问题出在较新批次 rpi 上的 BCM2711C0 芯片，而较早批次的产品采用 BCM2711 芯片，所以并无此问题。另外根据该 issues，rpi OS 与 NixOS 通用 ARM 镜像的主要区别是，rpi OS 使用的是树莓派基金会的 linux 分支，而 NixOS on ARM 采用主线内核。&lt;/p&gt;
+
+&lt;p&gt;另外说一下，在 NixOS 上进行交叉编译真的是非常方便。再结合 &lt;a href=&quot;https://github.com/serokell/deploy-rs&quot;&gt;deploy-rs&lt;/a&gt; 工具使用，体验一定会很好。这里附上 @NickCao 在 Tunight 上的 Nix 介绍演讲：&lt;a href=&quot;https://www.youtube.com/watch?v=S9fmj50Kh0Y&quot;&gt;金枪鱼之夜：Nix - 从构建系统到配置管理&lt;/a&gt;，他真的很有人格魅力。&lt;/p&gt;
+</description>
+        <pubDate>Mon, 20 Sep 2021 00:00:00 +0000</pubDate>
+        <link>/2021/09/20/rpi-nixos.html</link>
+        <guid isPermaLink="true">/2021/09/20/rpi-nixos.html</guid>
+        
+        
+      </item>
+    
+      <item>
+        <title>Jekyll 博客搭建与 Nix 部署</title>
+        <description>&lt;blockquote&gt;
+  &lt;p&gt;Nix is awesome.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;首篇博客自然是要讲述搭建的过程，对于这次开始写博客，我仍然选择使用 &lt;a href=&quot;https://github.com/kaeyleo/jekyll-theme-H2O&quot;&gt;kaeyleo/jekyll-theme-H2O&lt;/a&gt; 主题。
+不过这个项目已经有两年多时间没有更新了，可谓是年久失修。就连其使用的框架 &lt;a href=&quot;https://jekyllrb.com/&quot;&gt;Jekyll&lt;/a&gt; 也早已经历了一次大版本更新 (4.x)，无法使用这个主题。&lt;/p&gt;
+
+&lt;p&gt;再加上我使用的是较为特殊的 &lt;a href=&quot;https://nixos.org/&quot;&gt;NixOS&lt;/a&gt;，跑起这个项目就成为了第一个目标。&lt;/p&gt;
+
+&lt;p&gt;经过一番搜索，找到了一篇博客 (&lt;a href=&quot;https://nathan.gs/2019/04/19/using-jekyll-and-nix-to-blog/&quot;&gt;Using Jekyll and Nix to blog&lt;/a&gt;)，使用 nix-shell (bundlerEnv) + 一个 script 解决了这个问题，最终提交见 &lt;a href=&quot;https://github.com/VergeDX/vergedx.github.io/commit/bc6255e2b2b5022c9e18bd6ba69cf46494af7013&quot;&gt;#bc6255e&lt;/a&gt;。&lt;/p&gt;
+
+&lt;p&gt;GitHub pages 默认使用了较新版本的 Jekyll 帮我编译 blog，所以部署这件事情还得自己来。只需把 jekyll 命令换为 &lt;code class=&quot;highlighter-rouge&quot;&gt;jekyll build&lt;/code&gt;，上传 &lt;code class=&quot;highlighter-rouge&quot;&gt;_site/*&lt;/code&gt; 到另一个部署分支即可。一年前我在另一个 GitHub pages 这样做过，所以还记得。&lt;/p&gt;
+
+&lt;p&gt;我使用 &lt;a href=&quot;https://neovim.io/&quot;&gt;Neovim&lt;/a&gt; 编辑 GitHub Actions 的 yml 时，意外发现我所使用的 YAML LSP (&lt;a href=&quot;https://github.com/redhat-developer/yaml-language-server&quot;&gt;redhat-developer/yaml-language-server&lt;/a&gt;) 支持对 GitHub Actions 的语法进行补全，但其项目首页似乎并未写明这一特性。&lt;/p&gt;
+
+&lt;p&gt;在最终的 GitHub Actions script 中，直接用 &lt;a href=&quot;https://github.com/marketplace/actions/install-nix&quot;&gt;Install Nix&lt;/a&gt; 装好 Nix，用 &lt;code class=&quot;highlighter-rouge&quot;&gt;sed&lt;/code&gt; 替换一下 jekyll 命令，然后跑 server.sh 就已经是构建过程了。最后用 &lt;a href=&quot;https://github.com/ad-m/github-push-action&quot;&gt;ad-m/github-push-action&lt;/a&gt; 强推一下 deploy 分支就好，还算是方便。&lt;/p&gt;
+</description>
+        <pubDate>Sun, 19 Sep 2021 00:00:00 +0000</pubDate>
+        <link>/2021/09/19/jekyll-nix.html</link>
+        <guid isPermaLink="true">/2021/09/19/jekyll-nix.html</guid>
+        
+        
+      </item>
+    
+  </channel>
+</rss>

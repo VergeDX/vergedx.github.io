@@ -1,0 +1,7 @@
+# https://bundler.io/gemfile.html
+source 'https://rubygems.org'
+
+# https://github.com/kaeyleo/jekyll-theme-H2O#:~:text=3.2.1
+gem 'jekyll', '3.2.1'
+gem 'jekyll-paginate'
+

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jekyll 博客搭建与 Nix 部署 - Vanilla's blog</title>
+    <meta name="author"  content="Vanilla">
+    <meta name="description" content="Jekyll 博客搭建与 Nix 部署">
+    <meta name="keywords"  content="">
+    <!-- Open Graph -->
+    <meta property="og:title" content="Jekyll 博客搭建与 Nix 部署 - Vanilla's blog">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/2021/09/19/jekyll-nix.html">
+    <meta property="og:description" content="">
+    <meta property="og:site_name" content="Vanilla's blog">
+    <link rel="stylesheet" href="//cdn.staticfile.org/normalize/6.0.0/normalize.min.css">
+    <link rel="stylesheet" href="//at.alicdn.com/t/font_roc50gemkxpw4s4i.css">
+    <link rel="stylesheet" href="/assets/css/github-markdown.css">
+    <link rel="stylesheet" href="/assets/css/prism.css">
+    <link rel="stylesheet" href="/assets/css/share.min.css">
+    <link rel="stylesheet" href="/assets/css/app.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+	
+	<!--
+Author: Ray-Eldath
+refer to:
+ - http://docs.mathjax.org/en/latest/options/index.html
+-->
+
+	<script type="text/javascript" async src="https://cdn.bootcss.com/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+	
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+		jax: ["input/TeX", "output/HTML-CSS"],
+		tex2jax: {
+			inlineMath: [ ["$", "$"] ],
+			displayMath: [ ["$$", "$$"] ],
+			skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+		},
+		"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] }
+      });
+    </script>
+
+	
+    <!--
+Author: Ray-Eldath
+-->
+<style>
+    .markdown-body .anchor{
+        float: left;
+        margin-top: -8px;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        opacity: 0;
+    }
+    
+    .markdown-body .anchor .anchor-icon{
+        font-size: 15px
+    }
+</style>
+<script>
+    $(document).ready(function() {
+        let nodes = document.querySelector(".markdown-body").querySelectorAll("h1,h2,h3")
+        for(let node of nodes) {
+            var anchor = document.createElement("a")
+            var anchorIcon = document.createElement("i")
+            anchorIcon.setAttribute("class", "fa fa-anchor fa-lg anchor-icon")
+            anchorIcon.setAttribute("aria-hidden", true)
+            anchor.setAttribute("class", "anchor")
+            anchor.setAttribute("href", "#" + node.getAttribute("id"))
+            
+            anchor.onmouseover = function() {
+                this.style.opacity = "0.4"
+            }
+            
+            anchor.onmouseout = function() {
+                this.style.opacity = "0"
+            }
+            
+            anchor.appendChild(anchorIcon)
+            node.appendChild(anchor)
+        }
+    })
+</script>
+</head>
+
+
+<body>
+  <!--[if lt IE 10]>
+<div class="alert-danger" role="alert">你的浏览器实在太太太旧了，放学别走，升级完浏览器再说！<a target="_blank" class="alert-link" href="http://browsehappy.com">立即升级</a></div>
+<![endif]-->
+  <input id="nm-switch" type="hidden" value="true"> <header class="g-header">
+    <div class="g-logo">
+      <a href="/"></a>
+    </div>
+    <i id="menu-toggle" class="iconfont icon-menu"></i>
+    <nav class="g-nav">
+        <ul>
+            
+            <li><a href="/">home</a></li>
+            
+            <li><a href="/tags.html">tags</a></li>
+            
+        </ul>
+    </nav>
+</header>
+
+
+  <header
+    class="g-banner post-header post-pattern-circuitBoard bgcolor-pink "
+    data-theme="pink"
+  >
+    <div class="post-wrapper">
+      <div class="post-tags">
+        
+      </div>
+      <h1>Jekyll 博客搭建与 Nix 部署</h1>
+      <div class="post-meta">
+        <span class="post-meta-item"><i class="iconfont icon-author"></i>Vanilla</span>
+        <time class="post-meta-item" datetime="21-09-19"><i class="iconfont icon-date"></i>19 Sep 2021</time>
+      </div>
+    </div>
+    
+    <div class="filter"></div>
+      <div class="post-cover" style="background: url('https://www.jekyll.com.cn/img/jekyll-og.png') center no-repeat; background-size: cover;"></div>
+    
+  </header>
+
+  <div class="post-content visible">
+    
+
+    <article class="markdown-body">
+      <blockquote>
+  <p>Nix is awesome.</p>
+</blockquote>
+
+<p>首篇博客自然是要讲述搭建的过程，对于这次开始写博客，我仍然选择使用 <a href="https://github.com/kaeyleo/jekyll-theme-H2O">kaeyleo/jekyll-theme-H2O</a> 主题。
+不过这个项目已经有两年多时间没有更新了，可谓是年久失修。就连其使用的框架 <a href="https://jekyllrb.com/">Jekyll</a> 也早已经历了一次大版本更新 (4.x)，无法使用这个主题。</p>
+
+<p>再加上我使用的是较为特殊的 <a href="https://nixos.org/">NixOS</a>，跑起这个项目就成为了第一个目标。</p>
+
+<p>经过一番搜索，找到了一篇博客 (<a href="https://nathan.gs/2019/04/19/using-jekyll-and-nix-to-blog/">Using Jekyll and Nix to blog</a>)，使用 nix-shell (bundlerEnv) + 一个 script 解决了这个问题，最终提交见 <a href="https://github.com/VergeDX/vergedx.github.io/commit/bc6255e2b2b5022c9e18bd6ba69cf46494af7013">#bc6255e</a>。</p>
+
+<p>GitHub pages 默认使用了较新版本的 Jekyll 帮我编译 blog，所以部署这件事情还得自己来。只需把 jekyll 命令换为 <code class="highlighter-rouge">jekyll build</code>，上传 <code class="highlighter-rouge">_site/*</code> 到另一个部署分支即可。一年前我在另一个 GitHub pages 这样做过，所以还记得。</p>
+
+<p>我使用 <a href="https://neovim.io/">Neovim</a> 编辑 GitHub Actions 的 yml 时，意外发现我所使用的 YAML LSP (<a href="https://github.com/redhat-developer/yaml-language-server">redhat-developer/yaml-language-server</a>) 支持对 GitHub Actions 的语法进行补全，但其项目首页似乎并未写明这一特性。</p>
+
+<p>在最终的 GitHub Actions script 中，直接用 <a href="https://github.com/marketplace/actions/install-nix">Install Nix</a> 装好 Nix，用 <code class="highlighter-rouge">sed</code> 替换一下 jekyll 命令，然后跑 server.sh 就已经是构建过程了。最后用 <a href="https://github.com/ad-m/github-push-action">ad-m/github-push-action</a> 强推一下 deploy 分支就好，还算是方便。</p>
+
+    </article>
+
+    
+    <div class="social-share-wrapper">
+      <div class="social-share"></div>
+    </div>
+    
+  </div>
+
+  <section class="author-detail">
+    <section class="post-footer-item author-card">
+      <div class="avatar">
+        <img src="/assets/img/avatar.png" alt="">
+      </div>
+      <div class="author-name" rel="author">Vanilla</div>
+      <div class="bio">
+        <p></p>
+      </div>
+      
+      <ul class="sns-links">
+        
+        <li>
+          <a href="osu_Vanilla@126.com" target="_blank">
+                    <i class="iconfont icon-email"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://www.zhihu.com/people/xiang-zi-lan-xiao-ke-ai-w" target="_blank">
+                    <i class="iconfont icon-zhihu"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://twitter.com/osu_Vanilla" target="_blank">
+                    <i class="iconfont icon-twitter"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://github.com/VergeDX" target="_blank">
+                    <i class="iconfont icon-github"></i>
+                </a>
+        </li>
+        
+      </ul>
+      
+    </section>
+    <section class="post-footer-item read-next">
+      
+      <div class="read-next-item">
+        <a href="/2021/09/20/rpi-nixos.html" class="read-next-link"></a>
+        <section>
+          <span>Raspberry Pi 4B 与 NixOS</span>
+          <p>  Jesus fuck, Broadcom.</p>
+        </section>
+        
+        <div class="filter"></div>
+        <img src="https://linuxreviews.org/images/2/26/Nix-girl.png" alt="">
+        
+     </div>
+      
+
+      
+    </section>
+    
+  </section>
+
+  <footer class="g-footer">
+  <section>Vanilla's blog ©
+  
+  
+  2021
+  </section>
+  <section>Powered by <a href="//jekyllrb.com">Jekyll</a> | <a href="https://github.com/kaeyleo/jekyll-theme-H2O">Theme H2O</a></section>
+</footer>
+
+
+  <script src="/assets/js/social-share.min.js"></script>
+  <script>
+    socialShare('.social-share', {
+      sites: [
+        
+          'wechat'
+          ,
+          
+        
+          'weibo'
+          ,
+          
+        
+          'douban'
+          ,
+          
+        
+          'twitter'
+          
+        
+      ],
+      wechatQrcodeTitle: "分享到微信朋友圈",
+      wechatQrcodeHelper: '<p>扫码后点击右上角</p><p>将本文分享至朋友圈</p>'
+    });
+  </script>
+
+  
+
+  <script src="/assets/js/prism.js"></script>
+  <script src="/assets/js/index.min.js"></script>
+</body>
+
+</html>

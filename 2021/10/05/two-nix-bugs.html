@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关于两个 Nix 的 “bug” - Chromium & Recursion - Vanilla's blog</title>
+    <meta name="author"  content="Vanilla">
+    <meta name="description" content="关于两个 Nix 的 “bug” - Chromium & Recursion">
+    <meta name="keywords"  content="">
+    <!-- Open Graph -->
+    <meta property="og:title" content="关于两个 Nix 的 “bug” - Chromium & Recursion - Vanilla's blog">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/2021/10/05/two-nix-bugs.html">
+    <meta property="og:description" content="">
+    <meta property="og:site_name" content="Vanilla's blog">
+    <link rel="stylesheet" href="//cdn.staticfile.org/normalize/6.0.0/normalize.min.css">
+    <link rel="stylesheet" href="//at.alicdn.com/t/font_roc50gemkxpw4s4i.css">
+    <link rel="stylesheet" href="/assets/css/github-markdown.css">
+    <link rel="stylesheet" href="/assets/css/prism.css">
+    <link rel="stylesheet" href="/assets/css/share.min.css">
+    <link rel="stylesheet" href="/assets/css/app.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+	
+	<!--
+Author: Ray-Eldath
+refer to:
+ - http://docs.mathjax.org/en/latest/options/index.html
+-->
+
+	<script type="text/javascript" async src="https://cdn.bootcss.com/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+	
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+		jax: ["input/TeX", "output/HTML-CSS"],
+		tex2jax: {
+			inlineMath: [ ["$", "$"] ],
+			displayMath: [ ["$$", "$$"] ],
+			skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+		},
+		"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] }
+      });
+    </script>
+
+	
+    <!--
+Author: Ray-Eldath
+-->
+<style>
+    .markdown-body .anchor{
+        float: left;
+        margin-top: -8px;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        opacity: 0;
+    }
+    
+    .markdown-body .anchor .anchor-icon{
+        font-size: 15px
+    }
+</style>
+<script>
+    $(document).ready(function() {
+        let nodes = document.querySelector(".markdown-body").querySelectorAll("h1,h2,h3")
+        for(let node of nodes) {
+            var anchor = document.createElement("a")
+            var anchorIcon = document.createElement("i")
+            anchorIcon.setAttribute("class", "fa fa-anchor fa-lg anchor-icon")
+            anchorIcon.setAttribute("aria-hidden", true)
+            anchor.setAttribute("class", "anchor")
+            anchor.setAttribute("href", "#" + node.getAttribute("id"))
+            
+            anchor.onmouseover = function() {
+                this.style.opacity = "0.4"
+            }
+            
+            anchor.onmouseout = function() {
+                this.style.opacity = "0"
+            }
+            
+            anchor.appendChild(anchorIcon)
+            node.appendChild(anchor)
+        }
+    })
+</script>
+</head>
+
+
+<body>
+  <!--[if lt IE 10]>
+<div class="alert-danger" role="alert">你的浏览器实在太太太旧了，放学别走，升级完浏览器再说！<a target="_blank" class="alert-link" href="http://browsehappy.com">立即升级</a></div>
+<![endif]-->
+  <input id="nm-switch" type="hidden" value="true"> <header class="g-header">
+    <div class="g-logo">
+      <a href="/"></a>
+    </div>
+    <i id="menu-toggle" class="iconfont icon-menu"></i>
+    <nav class="g-nav">
+        <ul>
+            
+            <li><a href="/">home</a></li>
+            
+            <li><a href="/tags.html">tags</a></li>
+            
+        </ul>
+    </nav>
+</header>
+
+
+  <header
+    class="g-banner post-header post-pattern-circuitBoard bgcolor-pink "
+    data-theme="pink"
+  >
+    <div class="post-wrapper">
+      <div class="post-tags">
+        
+      </div>
+      <h1>关于两个 Nix 的 “bug” - Chromium & Recursion</h1>
+      <div class="post-meta">
+        <span class="post-meta-item"><i class="iconfont icon-author"></i>Vanilla</span>
+        <time class="post-meta-item" datetime="21-10-05"><i class="iconfont icon-date"></i>05 Oct 2021</time>
+      </div>
+    </div>
+    
+    <div class="filter"></div>
+      <div class="post-cover" style="background: url('https://miro.medium.com/max/1400/1*ZUH2k05-kVg19QmzwvKdPw.png') center no-repeat; background-size: cover;"></div>
+    
+  </header>
+
+  <div class="post-content visible">
+    
+
+    <article class="markdown-body">
+      <blockquote>
+  <p>The Nix expression language is a pure, lazy, functional language.</p>
+</blockquote>
+
+<p>最近日常使用 NixOS 的过程中，遇到了两个奇怪的问题。</p>
+
+<h3 id="1-nix-build-爆内存">1. nix build 爆内存</h3>
+
+<p>正如 Quote 所言，Nix 表达式语言是一种纯粹的、惰性的、函数式语言。这种特性造成了今天要讲的第一个问题 -- nix build 内存爆炸。</p>
+
+<p>根据 GitHub issues <a href="https://github.com/NixOS/nixpkgs/pull/139865">NixOS/nixpkgs #139865</a> 中的描述，我先是写了一个 uboot.nix：</p>
+
+<pre><code class="language-Nix">{ pkgs ? import &lt;nixpkgs&gt; { } }:
+pkgs.pkgsCross.aarch64-multiplatform.ubootRaspberryPi4_64bit.overrideAttrs (old: {
+  patches = old.patches ++ [
+    (pkgs.fetchpatch {
+      url = "https://patchwork.ozlabs.org/series/259129/mbox/";
+      sha256 = "04x55a62a5p4mv0ddpx7dnsh5pnx46vibnq8cry7hgwf4krl64gl";
+    })
+  ];
+})
+</code></pre>
+
+<p>然后执行 <code class="highlighter-rouge">nix-build uboot.nix</code> 后，是正常 build 出了 <code class="highlighter-rouge">u-boot-rpi4.bin</code>，这里没有什么问题。</p>
+
+<p>这之后为了 build sdImage 方便，我将其写进 <code class="highlighter-rouge">flake.nix</code> 中，做成 overlays：</p>
+
+<pre><code class="language-Nix">{
+  nixpkgs.overlays = [
+    (self: super: {
+      ubootRaspberryPi4_64bit = super.callPackage ./uboot.nix { };
+    })
+  ];
+}
+</code></pre>
+
+<p>并加在 <code class="highlighter-rouge">flake.nix</code> 中的 <code class="highlighter-rouge">modules</code> 里，就像这样：<a href="https://github.com/VergeDX/PoC/blob/master/flake.nix">VergeDX/PoC - flake.nix</a>。其中，<code class="highlighter-rouge">"${nixpkgs}/nixos/modules/installer/sd-card/sd-image-aarch64.nix"</code> 是用于构建 sdImage 的。可以参考一下 <a href="../../09/21/rpi-nixos-details.html">之前的博客</a>。</p>
+
+<p>这看起来并没有什么问题。当然如果要用 overlays 的话，也可以直接在 overlays 里 overrideAttrs，没必要 callPackage。但这确是出现问题的地方。</p>
+
+<p>我将相关代码另外单独放了一处 repo，有兴趣的朋友可以自己尝试一下：<a href="https://github.com/VergeDX/PoC">VergeDX/PoC</a>。使用命令 <code class="highlighter-rouge">nix build .#nixosConfigurations."recurrent".config.system.build.sdImage</code> 即可构建。</p>
+
+<p>在我发现问题前，我跑了 nix build 一段时间后，我发现我的系统整个卡住了。最后通过 <a href="https://en.wikipedia.org/wiki/Magic_SysRq_key">Magic SysRq 组合键</a> 才捡回一条命。我的机器配备了 32G 的内存，不存在内存不足的情况。</p>
+
+<p>这之后我进行了多次实验与观察，发现跑完 nix build 后，内存一直在增长。同时 nix 进程也不吃 signal，只能通过 kill -9 来杀死。并且似乎是卡在 eval 阶段，因为无论是 -vL 还是 –dry-run 都不输出任何内容。</p>
+
+<p>与 @NickCao 老师以及 @yinfeng 讨论后，爆内存的原因终于被找到了。首先需要注意的是 <code class="highlighter-rouge">uboot.nix</code> 的第一行，它引用 pkgs 或导入 nixpkgs。由于这是 flakes，而 <code class="highlighter-rouge">import &lt;nixpkgs&gt;</code> 是 impure 的。但该命令并未报 impure 错误，以为此处的 pkgs 是 flakes 中 nixpkgs 的 pkgs 属性，也即 <code class="highlighter-rouge">nix repl</code> 中的 pkgs.pkgs。</p>
+
+<p>而 pkgs.pkgs 则是 pkgs 本身，这也意味着可以 pkgs.pkgs.pkgs… 一直写下去。这就导致了 patches 变量一直在被 ++，始终无法收敛，最后内存爆炸。这并不是 Nix 的 bug。</p>
+
+<blockquote>
+  <p>@NickCao 老师：不过 til (Today I Learned)</p>
+</blockquote>
+
+<h3 id="2-chromium-与-xdg-open-的问题">2. Chromium 与 xdg-open 的问题</h3>
+
+<p>下一个问题是关于 chromium 包的。问题是这样的，某天开始我发现，如果从别的 app 调用 Chromium 打开新标签页，Chromium 仅仅显示一个空白的 New Tab。比如在 <a href="https://albertlauncher.github.io/">Albert</a> 中搜索东西时，或者 Telegram / [Alacritty / Kitty 终端] 中点击链接时，又或者在 VSCode 中进行三方登陆时。在这些场景下 Chromium 都只会弹一个新窗口出来，但却是空白页。</p>
+
+<p>本来我以为这只是 Chromium 的 bug，因为 <code class="highlighter-rouge">google-chrome</code> 包和 <code class="highlighter-rouge">firefox</code> 包均无此问题，就没有放在心上。但它不能正常工作又有些讨厌，于是打算尝试修一修。找到了这一篇问答：</p>
+
+<p><a href="https://askubuntu.com/questions/540939/xdg-open-only-opens-a-new-tab-in-a-new-chromium-window-despite-passing-it-a-url">xdg-open only opens a new tab in a new Chromium window despite passing it a URL</a></p>
+
+<p>这里说的是在 Desktop entity 里，chromium %U 中的 %U 在 xdg-open 时会被换成 url，从而打开新标签页。于是我检查了一下 chromium, google-chrome, firefox 包中的 .desktop 文件，没看出什么端倪。</p>
+
+<p>然后我试了一下 <code class="highlighter-rouge">chromium https://baidu.com</code>，发现症状得以复现，于是我看了一下 chromium 的启动脚本（仅贴出最后四行）：</p>
+
+<pre><code class="language-Nix">exec "/nix/store/blqad79va9mw2mwimhi4mvya0jbrrrvs-chromium-unwrapped-94.0.4606.71/libexec/chromium/chromium"  --enable-gpu-rasterization \
+--enable-zero-copy \
+--enable-features=VaapiVideoDecoder
+ "$@"
+</code></pre>
+
+<p>这里的三个 --enable-xxx flag 是我用 override 里的参数 <code class="highlighter-rouge">commandLineArgs</code> 传进去的。它接收一个字符串，并写在 chromium 的启动脚本里。由于最后那个多出来的换行，导致 “$@” 被删去，而它本来应该是 url 的占位符。又由于是 exec chromium ，所以执行完也不会报错，url 就这样给忽略掉了。</p>
+
+<p>解决的方法也非常简单，多加一个反斜杠就好了：<a href="https://github.com/VergeDX/config-nixpkgs/commit/a7c6a126a507888b3467f53154a4b1c2fb4d0f30">VergeDX/config-nixpkgs #a7c6a12</a>。</p>
+
+    </article>
+
+    
+    <div class="social-share-wrapper">
+      <div class="social-share"></div>
+    </div>
+    
+  </div>
+
+  <section class="author-detail">
+    <section class="post-footer-item author-card">
+      <div class="avatar">
+        <img src="/assets/img/avatar.png" alt="">
+      </div>
+      <div class="author-name" rel="author">Vanilla</div>
+      <div class="bio">
+        <p></p>
+      </div>
+      
+      <ul class="sns-links">
+        
+        <li>
+          <a href="osu_Vanilla@126.com" target="_blank">
+                    <i class="iconfont icon-email"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://www.zhihu.com/people/xiang-zi-lan-xiao-ke-ai-w" target="_blank">
+                    <i class="iconfont icon-zhihu"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://twitter.com/osu_Vanilla" target="_blank">
+                    <i class="iconfont icon-twitter"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://github.com/VergeDX" target="_blank">
+                    <i class="iconfont icon-github"></i>
+                </a>
+        </li>
+        
+      </ul>
+      
+    </section>
+    <section class="post-footer-item read-next">
+      
+
+      
+      <div class="read-next-item">
+        <a href="/2021/10/02/tick-stack.html" class="read-next-link"></a>
+          <section>
+            <span>集群监控，TICK 技术栈，以及 agenix</span>
+            <p>  Telegraf | InfluxDB | Chronograf | Kapacitor.</p>
+          </section>
+          
+          <div class="filter"></div>
+          <img src="https://www.influxdata.com/wp-content/uploads/influx-regular-black.jpg" alt="">
+          
+      </div>
+      
+    </section>
+    
+  </section>
+
+  <footer class="g-footer">
+  <section>Vanilla's blog ©
+  
+  
+  2021
+  </section>
+  <section>Powered by <a href="//jekyllrb.com">Jekyll</a> | <a href="https://github.com/kaeyleo/jekyll-theme-H2O">Theme H2O</a></section>
+</footer>
+
+
+  <script src="/assets/js/social-share.min.js"></script>
+  <script>
+    socialShare('.social-share', {
+      sites: [
+        
+          'wechat'
+          ,
+          
+        
+          'weibo'
+          ,
+          
+        
+          'douban'
+          ,
+          
+        
+          'twitter'
+          
+        
+      ],
+      wechatQrcodeTitle: "分享到微信朋友圈",
+      wechatQrcodeHelper: '<p>扫码后点击右上角</p><p>将本文分享至朋友圈</p>'
+    });
+  </script>
+
+  
+
+  <script src="/assets/js/prism.js"></script>
+  <script src="/assets/js/index.min.js"></script>
+</body>
+
+</html>

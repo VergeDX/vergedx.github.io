@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspberry Pi 4B 与 NixOS - Vanilla's blog</title>
+    <meta name="author"  content="Vanilla">
+    <meta name="description" content="Raspberry Pi 4B 与 NixOS">
+    <meta name="keywords"  content="">
+    <!-- Open Graph -->
+    <meta property="og:title" content="Raspberry Pi 4B 与 NixOS - Vanilla's blog">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/2021/09/20/rpi-nixos.html">
+    <meta property="og:description" content="">
+    <meta property="og:site_name" content="Vanilla's blog">
+    <link rel="stylesheet" href="//cdn.staticfile.org/normalize/6.0.0/normalize.min.css">
+    <link rel="stylesheet" href="//at.alicdn.com/t/font_roc50gemkxpw4s4i.css">
+    <link rel="stylesheet" href="/assets/css/github-markdown.css">
+    <link rel="stylesheet" href="/assets/css/prism.css">
+    <link rel="stylesheet" href="/assets/css/share.min.css">
+    <link rel="stylesheet" href="/assets/css/app.min.css">
+    <link rel="stylesheet" href="https://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script src="https://cdn.staticfile.org/jquery/3.2.1/jquery.min.js"></script>
+	
+	<!--
+Author: Ray-Eldath
+refer to:
+ - http://docs.mathjax.org/en/latest/options/index.html
+-->
+
+	<script type="text/javascript" async src="https://cdn.bootcss.com/mathjax/2.7.2/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+	
+    <script type="text/x-mathjax-config">
+      MathJax.Hub.Config({
+		jax: ["input/TeX", "output/HTML-CSS"],
+		tex2jax: {
+			inlineMath: [ ["$", "$"] ],
+			displayMath: [ ["$$", "$$"] ],
+			skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+		},
+		"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] }
+      });
+    </script>
+
+	
+    <!--
+Author: Ray-Eldath
+-->
+<style>
+    .markdown-body .anchor{
+        float: left;
+        margin-top: -8px;
+        margin-left: -20px;
+        padding-right: 4px;
+        line-height: 1;
+        opacity: 0;
+    }
+    
+    .markdown-body .anchor .anchor-icon{
+        font-size: 15px
+    }
+</style>
+<script>
+    $(document).ready(function() {
+        let nodes = document.querySelector(".markdown-body").querySelectorAll("h1,h2,h3")
+        for(let node of nodes) {
+            var anchor = document.createElement("a")
+            var anchorIcon = document.createElement("i")
+            anchorIcon.setAttribute("class", "fa fa-anchor fa-lg anchor-icon")
+            anchorIcon.setAttribute("aria-hidden", true)
+            anchor.setAttribute("class", "anchor")
+            anchor.setAttribute("href", "#" + node.getAttribute("id"))
+            
+            anchor.onmouseover = function() {
+                this.style.opacity = "0.4"
+            }
+            
+            anchor.onmouseout = function() {
+                this.style.opacity = "0"
+            }
+            
+            anchor.appendChild(anchorIcon)
+            node.appendChild(anchor)
+        }
+    })
+</script>
+</head>
+
+
+<body>
+  <!--[if lt IE 10]>
+<div class="alert-danger" role="alert">你的浏览器实在太太太旧了，放学别走，升级完浏览器再说！<a target="_blank" class="alert-link" href="http://browsehappy.com">立即升级</a></div>
+<![endif]-->
+  <input id="nm-switch" type="hidden" value="true"> <header class="g-header">
+    <div class="g-logo">
+      <a href="/"></a>
+    </div>
+    <i id="menu-toggle" class="iconfont icon-menu"></i>
+    <nav class="g-nav">
+        <ul>
+            
+            <li><a href="/">home</a></li>
+            
+            <li><a href="/tags.html">tags</a></li>
+            
+        </ul>
+    </nav>
+</header>
+
+
+  <header
+    class="g-banner post-header post-pattern-circuitBoard bgcolor-pink "
+    data-theme="pink"
+  >
+    <div class="post-wrapper">
+      <div class="post-tags">
+        
+      </div>
+      <h1>Raspberry Pi 4B 与 NixOS</h1>
+      <div class="post-meta">
+        <span class="post-meta-item"><i class="iconfont icon-author"></i>Vanilla</span>
+        <time class="post-meta-item" datetime="21-09-20"><i class="iconfont icon-date"></i>20 Sep 2021</time>
+      </div>
+    </div>
+    
+    <div class="filter"></div>
+      <div class="post-cover" style="background: url('https://linuxreviews.org/images/2/26/Nix-girl.png') center no-repeat; background-size: cover;"></div>
+    
+  </header>
+
+  <div class="post-content visible">
+    
+
+    <article class="markdown-body">
+      <blockquote>
+  <p>Jesus fuck, Broadcom.</p>
+</blockquote>
+
+<p>树莓派 4B 自去年以来，确确实实是涨价了。<a href="https://github.com/cyunrei">@Cyunrei</a> 早些时候买的 rpi 4b (4GB RAM)，大概还是 ￥500 不到，而现如今京东裸板的价格都要 ￥700 多。于是我选择了在淘宝购买，裸版价格 ￥500+，也没涨价太多。</p>
+
+<p>买来之后，打算尝试一下学习 <a href="https://xmonad.org/">xmonad</a>。这款 X11 窗口管理器之前被 <a href="https://github.com/Icy-Thought">@Icy-Thought</a> 安利了多次，他最终调出来的桌面也很美观：<a href="https://github.com/">Icy-Thought/Snowflake</a>。</p>
+
+<p>另外，我还需要一个设备作为 4K 电视的机顶盒。家里的那台酷开电视十分拉垮，即使是 adb debug 下也无法安装 <a href="https://apkpure.com/vlc-for-android/org.videolan.vlc">VLC for Android</a>，自带的播放器又无法解码某些 mkv 视频的音轨，真是令人气愤。</p>
+
+<p>一来二去，我便买入 rpi 4b 来玩。这期间也踩了不少坑，比如线材的选择和 NixOS 等方面。</p>
+
+<p>首先是线材，rpi 4b 的显示输出接口为 MICRO HDMI (支持 2 x 4K 显示)。我的 <a href="http://www.aocmonitor.com.cn/product/xianshiqi/1781">AOC Q24N2</a> 显示器上有 DP 和 HDMI 两个接口，其中 HDMI 接口已经被我的笔记本占用，故打算将树莓派接在 DP 上。</p>
+
+<p>然而目前市面上的线材，似乎没有 MICRO HDMI -&gt; DP 的，所以我先买了绿联 MICRO HDMI -&gt; HDMI 的线，打算再购买 HDMI -&gt; DP 的转接头，于是就踩到坑了。</p>
+
+<p>市面上的 HDMI -&gt; DP 转接头，竟然大多数都是 DP -&gt; HDMI 的，这意味着无法反向使用。据 @Cyunrei 说此类转接头的原理类似漏斗，所以无法反向使用。这真是令人头痛，接下来的选择就只有 HDMI 切屏器了，然而我嫌弃它占用桌面空间，现在也不知道怎么办才好。</p>
+
+<p>初步解决掉 rpi 显示输出的问题后，我自然是要装 NixOS 的。当然我也打算尝试其它发行版，比如 <a href="https://plasma-bigscreen.org/">Plasma Bigscreen</a>。结果由于硬件太新，又遇到了另一个问题。</p>
+
+<p>在遵循 <a href="https://nixos.wiki/wiki/NixOS_on_ARM#Installation">NixOS on ARM</a> 时，使用通用的 images 系统无法启动（卡在 NixOS Stage 1，无法挂载根分区），具体表现可参考这个 issues：<a href="https://github.com/NixOS/nixpkgs/issues/135828">Raspberry Pi 4: Can’t mount SD card during boot</a>.</p>
+
+<p>看到这个 issues 前，我曾多次怀疑是 SD 卡的问题。我使用 nix.dev 上的这篇博客 <a href="https://nix.dev/tutorials/installing-nixos-on-a-raspberry-pi">Installing NixOS on a Raspberry Pi</a> 中的 images 尝试启动，仍然得到了相同的错误结果。而我与该博客的硬件设备相同，甚至 firmware 也有更新过。</p>
+
+<p>这之后我为了调试，甚至换了一张实验室监控中使用的 SD 卡，问题仍然依旧，但树莓派自己的 rpi OS 倒是可以正常启动。当时我为了控制变量，直接购入了 <a href="https://github.com/NickCao">@NickCao</a> 的同款 SD 卡 (<a href="https://www.kingston.com/en/memory-cards/canvas-go-plus-microsd-card">Canvas Go! Plus</a>)，结果当天晚上就看到了上述 issues，快速尝试了一下发现问题解决。</p>
+
+<p>根据上述 issues 的描述，问题出在较新批次 rpi 上的 BCM2711C0 芯片，而较早批次的产品采用 BCM2711 芯片，所以并无此问题。另外根据该 issues，rpi OS 与 NixOS 通用 ARM 镜像的主要区别是，rpi OS 使用的是树莓派基金会的 linux 分支，而 NixOS on ARM 采用主线内核。</p>
+
+<p>另外说一下，在 NixOS 上进行交叉编译真的是非常方便。再结合 <a href="https://github.com/serokell/deploy-rs">deploy-rs</a> 工具使用，体验一定会很好。这里附上 @NickCao 在 Tunight 上的 Nix 介绍演讲：<a href="https://www.youtube.com/watch?v=S9fmj50Kh0Y">金枪鱼之夜：Nix - 从构建系统到配置管理</a>，他真的很有人格魅力。</p>
+
+    </article>
+
+    
+    <div class="social-share-wrapper">
+      <div class="social-share"></div>
+    </div>
+    
+  </div>
+
+  <section class="author-detail">
+    <section class="post-footer-item author-card">
+      <div class="avatar">
+        <img src="/assets/img/avatar.png" alt="">
+      </div>
+      <div class="author-name" rel="author">Vanilla</div>
+      <div class="bio">
+        <p></p>
+      </div>
+      
+      <ul class="sns-links">
+        
+        <li>
+          <a href="osu_Vanilla@126.com" target="_blank">
+                    <i class="iconfont icon-email"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://www.zhihu.com/people/xiang-zi-lan-xiao-ke-ai-w" target="_blank">
+                    <i class="iconfont icon-zhihu"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://twitter.com/osu_Vanilla" target="_blank">
+                    <i class="iconfont icon-twitter"></i>
+                </a>
+        </li>
+        
+        <li>
+          <a href="https://github.com/VergeDX" target="_blank">
+                    <i class="iconfont icon-github"></i>
+                </a>
+        </li>
+        
+      </ul>
+      
+    </section>
+    <section class="post-footer-item read-next">
+      
+      <div class="read-next-item">
+        <a href="/2021/09/21/rpi-nixos-details.html" class="read-next-link"></a>
+        <section>
+          <span>rpi 4B + NixOS 踩坑小记 - WiFi</span>
+          <p>  Thanks helping from @NickCao &amp; @nanoApe!</p>
+        </section>
+        
+        <div class="filter"></div>
+        <img src="https://www.thorntech.com/wp-content/uploads/2018/04/nixos-logo-800px.jpg" alt="">
+        
+     </div>
+      
+
+      
+      <div class="read-next-item">
+        <a href="/2021/09/19/jekyll-nix.html" class="read-next-link"></a>
+          <section>
+            <span>Jekyll 博客搭建与 Nix 部署</span>
+            <p>  Nix is awesome.</p>
+          </section>
+          
+          <div class="filter"></div>
+          <img src="https://www.jekyll.com.cn/img/jekyll-og.png" alt="">
+          
+      </div>
+      
+    </section>
+    
+  </section>
+
+  <footer class="g-footer">
+  <section>Vanilla's blog ©
+  
+  
+  2021
+  </section>
+  <section>Powered by <a href="//jekyllrb.com">Jekyll</a> | <a href="https://github.com/kaeyleo/jekyll-theme-H2O">Theme H2O</a></section>
+</footer>
+
+
+  <script src="/assets/js/social-share.min.js"></script>
+  <script>
+    socialShare('.social-share', {
+      sites: [
+        
+          'wechat'
+          ,
+          
+        
+          'weibo'
+          ,
+          
+        
+          'douban'
+          ,
+          
+        
+          'twitter'
+          
+        
+      ],
+      wechatQrcodeTitle: "分享到微信朋友圈",
+      wechatQrcodeHelper: '<p>扫码后点击右上角</p><p>将本文分享至朋友圈</p>'
+    });
+  </script>
+
+  
+
+  <script src="/assets/js/prism.js"></script>
+  <script src="/assets/js/index.min.js"></script>
+</body>
+
+</html>
